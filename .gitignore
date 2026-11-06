@@ -1,0 +1,19 @@
+# Environment & secrets
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Data & output directories
+Data/
+dictionaries-04-11-2026/
+NLP/
+output/
+submission/
+cache/
+*.zip
+

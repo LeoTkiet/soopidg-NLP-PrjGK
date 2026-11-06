@@ -1,0 +1,57 @@
+project:
+  group_id: "24120356_24120386_24120399"
+  min_similarity_threshold: 95.0
+
+paths:
+  raw_data_dir: "D:/soopidg-NLP-PrjGK/Data"
+  dictionary_entries_dir: "D:/soopidg-NLP-PrjGK/dictionaries-04-11-2026/entries"
+  cache_dir: "D:/soopidg-NLP-PrjGK/cache"
+  output_dir: "D:/soopidg-NLP-PrjGK/output"
+  submission_dir: "D:/soopidg-NLP-PrjGK/submission"
+
+books:
+  - id: "book_1"
+    filename: "T1_Thánh Mẫu Phương Danh (Tập 1).pdf"
+    layout_type: "T1"
+    assigned_member: "Member_1"
+  - id: "book_2"
+    filename: "T1_Thánh Mẫu Phương Danh (Tập 2).pdf"
+    layout_type: "T1"
+    assigned_member: "Member_1"
+  - id: "book_3"
+    filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 1).pdf"
+    layout_type: "T1"
+    assigned_member: "Member_2"
+  - id: "book_4"
+    filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 2).pdf"
+    layout_type: "T1"
+    assigned_member: "Member_2"
+
+kimhannom_api:
+  base_url: "https://kimhannom.fit.hcmus.edu.vn"
+  # Giới hạn số lượt gọi trên website: 25/phút, 50/giờ, 200/ngày, 600/tuần
+  rate_limits:
+    per_minute: 25
+    per_hour: 50
+    per_day: 200
+    per_week: 600
+    min_delay_seconds: 3.0
+  default_params:
+    ocr_id: 1            # 1: Thông thường, chiều dọc | 2: Hành chính | 3: Ngoại cảnh | 4: Thông thường, chiều ngang
+    lang_type: 2         # 0: Chưa biết | 1: Chữ Hán | 2: Chữ Nôm
+    reading_direction: 1 # 1: Dọc (mặc định) | 2: Ngang
+    epitaph: 0           # 0: Văn bản thông thường | 1: Văn bia
+    tag: null
+
+dictionaries:
+  # Các nguồn ưu tiên tra cứu âm đọc Hán Nôm - Quốc ngữ
+  primary_sources:
+    - "btcn.jsonl"
+    - "dv.jsonl"
+    - "hannom_rcv.jsonl"
+    - "hvdic.jsonl"
+    - "dnqatv_wikisource.jsonl"
+    - "unihan.jsonl"
+  variant_sources:
+    - "cjkvi_variants.jsonl"
+
