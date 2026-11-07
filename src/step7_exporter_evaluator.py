@@ -29,8 +29,11 @@ def extract_sinonom_chars(text: str) -> List[str]:
 
 
 def extract_quoc_ngu_syllables(text: str) -> List[str]:
-    """Tách danh sách các âm tiết Quốc ngữ (loại bỏ dấu câu dính kèm)."""
-    raw_tokens = text.strip().split()
+    """
+    Tách danh sách các âm tiết Quốc ngữ (loại bỏ dấu câu dính kèm).
+    Tách cả các âm tiết nối bằng dấu gạch ngang '-' trong tên phiên âm (VD: Ma-ri-a -> Ma, ri, a).
+    """
+    raw_tokens = re.split(r"[\s\-]+", text.strip())
     syllables = []
     for tok in raw_tokens:
         clean_tok = PUNCTUATION_PATTERN.sub("", tok)

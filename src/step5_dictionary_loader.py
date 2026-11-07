@@ -57,6 +57,7 @@ class HanNomDictionaryIndex:
         readings = entry.get("readings", [])
         forms = entry.get("forms", [])
         variants = entry.get("variants", [])
+        relations = entry.get("relations", [])
 
         # Thu thập âm đọc tiếng Việt (qn, hv, nom)
         vi_readings: Set[str] = set()
@@ -72,6 +73,11 @@ class HanNomDictionaryIndex:
                 if v_char:
                     self.char_to_variants[head].add(v_char)
                     self.char_to_variants[v_char].add(head)
+            for rel in relations:
+                rel_to = rel.get("to")
+                if rel_to:
+                    self.char_to_variants[head].add(rel_to)
+                    self.char_to_variants[rel_to].add(head)
 
         elif script == "qn" and head:
             # Với từ điển Quốc ngữ (như dnqatv_wikisource), head là Quốc ngữ, forms chứa chữ Nôm/Hán

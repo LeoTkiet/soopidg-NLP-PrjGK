@@ -21,14 +21,34 @@ class AlignedSentencePair:
     chu_qn_txt: str      # Văn bản Quốc ngữ (đúng chính tả, khoảng trắng chuẩn)
 
 
+# Bảng ánh xạ các ký tự Private Use Area (PUA) do OCR Kim Hán Nôm trả về
+# sang ký tự Unicode Hán Nôm chuẩn có trong bộ từ điển
+PUA_NORMALIZATION_MAP = {
+    "\U000f000b": "冊",  # sách
+    "\U000f070f": "婆",  # bà
+    "\U000f070b": "𠬠",  # một
+    "\U000f03d9": "䀡",  # xem
+    "\U000f0152": "𠉞",  # nay
+    "\U000f0482": "義",  # nghĩa
+}
+
+
+def normalize_pua_chars(text: str) -> str:
+    """Chuyển các ký tự PUA (Private Use Area) sang ký tự Hán Nôm Unicode chuẩn."""
+    for pua_char, std_char in PUA_NORMALIZATION_MAP.items():
+        text = text.replace(pua_char, std_char)
+    return text
+
+
 def clean_sinonom_text(text: str) -> str:
     """
     Làm sạch văn bản Hán Nôm (Trang 8):
-    - Chuẩn hóa NFC.
+    - Chuẩn hóa NFC và chuẩn hóa ký tự PUA sang Unicode chuẩn.
     - Các chữ viết dính liền, không có khoảng trắng thừa giữa các chữ Hán Nôm.
     - Loại bỏ chỉ mục chú thích như [1], (1) và ký tự rác.
     """
     text = unicodedata.normalize("NFC", text)
+    text = normalize_pua_chars(text)
     text = re.sub(r"\[\d+\]|\(\d+\)", "", text)
     text = re.sub(r"\s+", "", text)
     return text.strip()

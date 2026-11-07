@@ -23,6 +23,7 @@ from PIL import Image
 
 from src.config import DEFAULT_USER_AGENT, PROJECT_ROOT
 from src.step4_ppocr_formatter import sort_boxes_sinonom_vertical, write_ppocr_files
+from src.step6_text_cleaner_aligner import normalize_pua_chars
 
 
 class RateLimitExceededError(RuntimeError):
@@ -368,6 +369,7 @@ def convert_api_result_to_ppocr_boxes(
             elif idx < len(raw_texts):
                 clean_txt = str(raw_texts[idx]).strip()
 
+            clean_txt = normalize_pua_chars(clean_txt)
             if not clean_txt:
                 continue
             if _is_margin_header_or_pagenum(pts, clean_txt, img_width, img_height):
