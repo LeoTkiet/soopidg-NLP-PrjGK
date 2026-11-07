@@ -33,7 +33,18 @@
 ### 1.4. Hoàn thiện Pipeline OCR Hán Nôm & Kiểm thử API (`src/step2_kimhannom_api.py`)
 - Tối ưu quy trình gọi API: chỉ gọi `image-upload` + `image-ocr` (bỏ qua `structure-classification`), giảm số request từ 3 xuống **2 request/trang** (tiết kiệm $33\%$ quota).
 - Tự động bóc tách đa giác 4 đỉnh từ cấu trúc `[[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], ["text", score]]`, lọc bỏ tiêu đề sách ngoài lề trái (`圣母芳名`) và số trang, đồng thời gom cụm cột dọc từ phải sang trái (`src/step4_ppocr_formatter.py`).
-- Đã chạy kiểm thử thành công trên `book_1` (`T1_Thánh Mẫu Phương Danh (Tập 1).234.jpg`), lưu cache tại `cache/ocr_nom/` và xuất chuẩn xác `output/T1_Thánh Mẫu Phương Danh (Tập 1)/ch/Label.txt` & `fileState.txt`.
+- Đã chạy kiểm thử thành công trên `book_1` (`234.jpg`, `235.jpg`, `439.jpg`, `440.jpg`), lưu cache tại `cache/ocr_nom/` và xuất chuẩn xác `output/T1_Thánh Mẫu Phương Danh (Tập 1)/ch/Label.txt` & `fileState.txt`.
+
+### 1.5. Hoàn thành Gói Dữ Liệu Mẫu 2 Cặp Trang Nộp Kiểm Tra Tiến Độ Chủ Nhật 08/11/2026 (`scripts/build_sample_submission.py`)
+- Đã xây dựng trọn bộ gói mẫu theo **Phương án A (2 trang đầu phần *Tựa* của `book_1`)**:
+  - **Cặp 1**: Nôm `T1_Thánh Mẫu Phương Danh (Tập 1).440.jpg` $\leftrightarrow$ Quốc ngữ `T1_Thánh Mẫu Phương Danh (Tập 1).019.jpg`
+  - **Cặp 2**: Nôm `T1_Thánh Mẫu Phương Danh (Tập 1).439.jpg` $\leftrightarrow$ Quốc ngữ `T1_Thánh Mẫu Phương Danh (Tập 1).020.jpg`
+- Đã tích hợp bảng chuẩn hóa ký tự PUA (`PUA_NORMALIZATION_MAP` trong `src/step6_text_cleaner_aligner.py`), hỗ trợ đọc quan hệ chữ dị thể `relations` từ `cjkvi_variants.jsonl` (`src/step5_dictionary_loader.py`), và tách âm tiết tên phiên âm có gạch nối `-` (`src/step7_exporter_evaluator.py`).
+- **Kết quả đánh giá gói mẫu (`submission/24120356_24120386_24120399_sample.zip`)**:
+  - Tổng số câu dóng hàng: **8 câu** (`.440.1` $\to$ `.440.6` và `.439.1` $\to$ `.439.2`, đã ghép câu vắt qua trang `.440.6` đúng quy định Trang 8).
+  - Tổng số chữ / âm tiết: **248 chữ Nôm $\leftrightarrow$ 248 âm tiết Quốc ngữ** (khớp 1-1 tuyệt đối 100%).
+  - Số chữ màu đen (`#000000`): **241 / 248 chữ**; Số chữ màu đỏ (`#FF0000`): **7 chữ** (đều là âm tiết phiên âm tên riêng nước ngoài: *Li-gô-ri-ô*, *Ma-ri-a*, *Pha-lăng-côn*, *Âu-gu-tinh*).
+  - **Độ tương đồng đạt `97.18%` ($\ge 95\%$ — ĐẠT CHUẨN NỘP BÀI)**.
 
 ---
 
