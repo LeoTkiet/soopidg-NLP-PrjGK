@@ -316,17 +316,94 @@ def get_sample_aligned_pairs() -> list:
     return pairs
 
 
-def render_bbox_preview(img_path: Path, boxes: list, out_preview_path: Path, color: str = "red") -> None:
+def segment_column_chars(im_gray, col_box: dict) -> list:
+    """
+    Tách 1 cột dọc chữ Nôm thành danh sách các bounding box cho TỪNG CHỮ (1 box = 1 chữ)
+    để xuất ra file `Label_char.txt` và `fileState_char.txt` theo Quy định Trang 4, 6, 7.
+    """
+    import numpy as np
+
+    chars = extract_sinonom_chars(col_box["transcription"])
+    n = len(chars)
+    pts = col_box["points"]
+    x1 = min(p[0] for p in pts)
+    x2 = max(p[0] for p in pts)
+    y1 = min(p[1] for p in pts)
+    y2 = max(p[1] for p in pts)
+    if n == 1:
+        return [{"transcription": chars[0], "points": [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]}]
+
+    crop = (im_gray[y1 : y2 + 1, x1 : x2 + 1] < 175).astype(np.float32)
+    ink_y = np.where(crop.sum(axis=1) >= 2)[0]
+    if len(ink_y) > 0:
+        y1_tight = y1 + int(ink_y[0])
+        y2_tight = y1 + int(ink_y[-1])
+    else:
+        y1_tight, y2_tight = y1, y2
+
+    crop = (im_gray[y1_tight : y2_tight + 1, x1 : x2 + 1] < 175).astype(np.float32)
+    row_proj = crop.sum(axis=1)
+    h = y2_tight - y1_tight + 1
+    step = h / n
+
+    cuts = [0]
+    for k in range(1, n):
+        center = k * step
+        w_half = max(3, int(step * 0.12))
+        lo = max(cuts[-1] + int(step * 0.72), int(round(center)) - w_half)
+        hi = min(h - int((n - k) * step * 0.72), int(round(center)) + w_half)
+        if lo < hi:
+            idxs = np.arange(lo, hi + 1)
+            scores = row_proj[lo : hi + 1] + 0.5 * ((idxs - center) ** 2)
+            best_y = int(idxs[int(np.argmin(scores))])
+            cuts.append(best_y)
+        else:
+            cuts.append(int(round(center)))
+    cuts.append(h)
+
+    char_boxes = []
+    for i, ch in enumerate(chars):
+        cy1 = y1_tight + cuts[i]
+        cy2 = y1_tight + cuts[i + 1] - 1
+        sub = crop[cuts[i] : cuts[i + 1], :]
+        ink_rows = np.where(sub.sum(axis=1) > 0)[0]
+        ink_cols = np.where(sub.sum(axis=0) > 0)[0]
+        ry1 = max(y1, cy1 + int(ink_rows[0]) - 2) if len(ink_rows) > 0 else cy1
+        ry2 = min(y2, cy1 + int(ink_rows[-1]) + 2) if len(ink_rows) > 0 else cy2
+        rx1 = max(0, x1 + int(ink_cols[0]) - 2) if len(ink_cols) > 0 else x1
+        rx2 = min(im_gray.shape[1] - 1, x1 + int(ink_cols[-1]) + 2) if len(ink_cols) > 0 else x2
+        char_boxes.append(
+            {"transcription": ch, "points": [[rx1, ry1], [rx2, ry1], [rx2, ry2], [rx1, ry2]]}
+        )
+    return char_boxes
+
+
+def get_sample_ch_char_annotations(ch_dir: Path, ch_col_annotations: dict) -> dict:
+    """Tạo dữ liệu bounding box cấp độ từng chữ (1 box = 1 chữ) cho `Label_char.txt`."""
+    import numpy as np
+
+    char_annotations = {}
+    for img_name, col_boxes in ch_col_annotations.items():
+        im_gray = np.asarray(Image.open(ch_dir / img_name).convert("L"))
+        cboxes = []
+        for cb in col_boxes:
+            cboxes.extend(segment_column_chars(im_gray, cb))
+        char_annotations[img_name] = cboxes
+    return char_annotations
+
+
+def render_bbox_preview(img_path: Path, boxes: list, out_preview_path: Path, color: str = "red", show_index: bool = True) -> None:
     """Vẽ bounding box và số thứ tự đọc lên ảnh để kiểm tra trực quan."""
     out_preview_path.parent.mkdir(parents=True, exist_ok=True)
     im = Image.open(img_path).convert("RGB")
     draw = ImageDraw.Draw(im)
     for i, b in enumerate(boxes, start=1):
         pts = [tuple(p) for p in b["points"]]
-        draw.polygon(pts, outline=color, width=3)
-        x0, y0 = pts[0]
-        draw.rectangle([x0, max(0, y0 - 20), x0 + 26, y0], fill=color)
-        draw.text((x0 + 4, max(0, y0 - 18)), f"#{i}", fill="white")
+        draw.polygon(pts, outline=color, width=2 if not show_index else 3)
+        if show_index:
+            x0, y0 = pts[0]
+            draw.rectangle([x0, max(0, y0 - 20), x0 + 26, y0], fill=color)
+            draw.text((x0 + 4, max(0, y0 - 18)), f"#{i}", fill="white")
     im.save(out_preview_path, quality=92)
 
 
@@ -359,11 +436,14 @@ def main() -> None:
             data["boxes"] = boxes
             cache_f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 2. Copy 2 cặp ảnh vào gói sample và ghi Label.txt + fileState.txt chuẩn PPOCRLabel
+    # 2. Copy 2 cặp ảnh vào gói sample và ghi cả Label.txt (cột dọc) + Label_char.txt (từng chữ)
     for img_name in ch_annotations:
         src_img = out_book_dir / "ch" / img_name
         shutil.copy2(src_img, sample_ch_dir / img_name)
     write_ppocr_files(sample_ch_dir, ch_annotations, is_char_level=False)
+    ch_char_annotations = get_sample_ch_char_annotations(sample_ch_dir, ch_annotations)
+    write_ppocr_files(sample_ch_dir, ch_char_annotations, is_char_level=True)
+    write_ppocr_files(out_book_dir / "ch", ch_char_annotations, is_char_level=True)
 
     for img_name in vi_annotations:
         src_img = out_book_dir / "vi" / img_name
@@ -439,11 +519,20 @@ def main() -> None:
     # 5. Tạo ảnh preview bounding box vào thư mục submission/preview/
     preview_dir = PROJECT_ROOT / "submission" / "preview"
     for img_name, boxes in ch_annotations.items():
+        p_num = Path(img_name).stem.split(".")[-1]
         render_bbox_preview(
             sample_ch_dir / img_name,
             boxes,
-            preview_dir / f"preview_ch_{Path(img_name).stem.split('.')[-1]}.jpg",
+            preview_dir / f"preview_ch_{p_num}.jpg",
             color="#D93025",
+            show_index=True,
+        )
+        render_bbox_preview(
+            sample_ch_dir / img_name,
+            ch_char_annotations[img_name],
+            preview_dir / f"preview_ch_{p_num}_char.jpg",
+            color="#00897B",
+            show_index=False,
         )
     for img_name, boxes in vi_annotations.items():
         render_bbox_preview(
