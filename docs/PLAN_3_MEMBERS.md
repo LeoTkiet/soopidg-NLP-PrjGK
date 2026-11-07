@@ -84,10 +84,10 @@ Nhóm có **4 file PDF** đều mang mã phân loại **`T1`**:
 
 ## 3. Lộ Trình Thực Hiện Theo Giai Đoạn (4 Giai Đoạn)
 
-| Giai đoạn | Mục tiêu trọng tâm | Đầu ra nghiệm thu (Deliverables) |
-| :--- | :--- | :--- |
-| **Giai đoạn 1: Khảo sát & Chiết xuất ảnh** | Kiểm tra chất lượng 4 file PDF, xác định cặp trang Nôm - Quốc ngữ tương ứng, chiết xuất ảnh `.jpg` độ phân giải gốc vào `ch/`, `vi/`, `toc/`, `blank/`, `misc/`. | Thư mục ảnh chuẩn tên `<Tên sách>.<STT>.jpg` và bảng ánh xạ trang của 4 tập sách. |
-| **Giai đoạn 2: Chạy OCR Nôm & Quốc ngữ** | Chạy OCR chữ Quốc ngữ (local) và chữ Hán Nôm (qua API Kim Hán Nôm có điều tiết quota + mô hình hỗ trợ). Chuẩn hóa `Label.txt` & `fileState.txt`. | Các file `Label.txt`, `fileState.txt` mở được trên `PPOCRLabel`, đúng thứ tự đọc. |
-| **Giai đoạn 3: Làm sạch, Từ điển & Dóng hàng** | Ghép câu chuyển trang, tách câu, dóng hàng bằng chỉ mục từ điển Hán Nôm, xuất `.csv` & `.xlsx` tô màu đen/đỏ. | File `<Tên sách>.csv` và `<Tên sách>.xlsx` bản nháp đầu tiên kèm điểm độ tương đồng. |
-| **Giai đoạn 4: Tinh chỉnh $\ge 95\%$ & Đóng gói** | Sửa lỗi các chữ màu đỏ (do OCR nhận nhầm chữ Nôm hoặc Quốc ngữ) để kéo độ tương đồng vượt mốc $95\%$. Hoàn thiện báo cáo & nén ZIP. | Độ tương đồng $\ge 95\%$, `<MSSV>_report.pdf`, `source.zip`, gói nộp hoàn chỉnh. |
+| Giai đoạn | Mục tiêu trọng tâm | Đầu ra nghiệm thu (Deliverables) | Trạng thái (07/11/2026) |
+| :--- | :--- | :--- | :--- |
+| **Giai đoạn 1: Khảo sát & Chiết xuất ảnh** | Kiểm tra chất lượng 4 file PDF, xác định cặp trang Nôm - Quốc ngữ tương ứng, chiết xuất ảnh `.jpg` độ phân giải gốc vào `ch/`, `vi/`, `toc/`, `blank/`, `misc/`. | Thư mục ảnh chuẩn tên `<Tên sách>.<STT>.jpg` và bảng ánh xạ trang của 4 tập sách. | **ĐÃ HOÀN THÀNH 100%** (1.431/1.431 ảnh đã phân loại; xem chi tiết tại [`docs/PROGRESS_REPORT.md`](PROGRESS_REPORT.md)) |
+| **Giai đoạn 2: Chạy OCR Nôm & Quốc ngữ** | Chạy OCR chữ Quốc ngữ (local) và chữ Hán Nôm (qua API Kim Hán Nôm có điều tiết quota + mô hình hỗ trợ). Chuẩn hóa `Label.txt` & `fileState.txt`. | Các file `Label.txt`, `fileState.txt` mở được trên `PPOCRLabel`, đúng thứ tự đọc. | **ĐANG THỰC HIỆN** (`step2_kimhannom_api.py` & `step4_ppocr_formatter.py` đã sẵn sàng và kiểm thử thành công trên `book_1`) |
+| **Giai đoạn 3: Làm sạch, Từ điển & Dóng hàng** | Ghép câu chuyển trang, tách câu, dóng hàng bằng chỉ mục từ điển Hán Nôm, xuất `.csv` & `.xlsx` tô màu đen/đỏ. | File `<Tên sách>.csv` và `<Tên sách>.xlsx` bản nháp đầu tiên kèm điểm độ tương đồng. | Chờ dữ liệu OCR từ Giai đoạn 2 |
+| **Giai đoạn 4: Tinh chỉnh $\ge 95\%$ & Đóng gói** | Sửa lỗi các chữ màu đỏ (do OCR nhận nhầm chữ Nôm hoặc Quốc ngữ) để kéo độ tương đồng vượt mốc $95\%$. Hoàn thiện báo cáo & nén ZIP. | Độ tương đồng $\ge 95\%$, `<MSSV>_report.pdf`, `source.zip`, gói nộp hoàn chỉnh. | Chờ Giai đoạn 3 |
 

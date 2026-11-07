@@ -25,16 +25,43 @@ def validate_bbox_item(item: Dict[str, Any]) -> bool:
     return True
 
 
-def sort_boxes_sinonom_vertical(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def sort_boxes_sinonom_vertical(
+    boxes: List[Dict[str, Any]], col_tolerance: int = 25
+) -> List[Dict[str, Any]]:
     """
     Sắp xếp thứ tự bounding box cho chữ Nôm viết dọc:
-    Từ phải sang trái (x giảm dần), trong cùng cột thì từ trên xuống dưới (y tăng dần).
-    TODO (Thành viên 1 & 2): Tinh chỉnh ngưỡng phân cụm cột dọc (column clustering threshold) cho sách 2 trang (T1).
+    Từ phải sang trái (cột x giảm dần theo ngưỡng phân cụm col_tolerance),
+    trong cùng cột thì từ trên xuống dưới (y tăng dần).
     """
-    return sorted(
-        boxes,
-        key=lambda b: (-b["points"][0][0], b["points"][0][1]),
-    )
+    if not boxes:
+        return []
+
+    # Phân cụm các box có tâm X gần nhau (<= col_tolerance) vào cùng một cột dọc
+    items = []
+    for b in boxes:
+        pts = b["points"]
+        cx = sum(p[0] for p in pts) / 4.0
+        cy = min(p[1] for p in pts)
+        items.append((cx, cy, b))
+
+    # Sắp xếp giảm dần theo cx để gom cụm cột từ phải sang trái
+    items.sort(key=lambda x: -x[0])
+    columns: List[List[Tuple[float, float, Dict[str, Any]]]] = []
+    for item in items:
+        if not columns:
+            columns.append([item])
+        else:
+            mean_cx = sum(x[0] for x in columns[-1]) / len(columns[-1])
+            if abs(item[0] - mean_cx) <= col_tolerance:
+                columns[-1].append(item)
+            else:
+                columns.append([item])
+
+    sorted_boxes: List[Dict[str, Any]] = []
+    for col in columns:
+        col.sort(key=lambda x: x[1])  # Trên xuống dưới trong cùng một cột
+        sorted_boxes.extend(x[2] for x in col)
+    return sorted_boxes
 
 
 def sort_boxes_quoc_ngu(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
