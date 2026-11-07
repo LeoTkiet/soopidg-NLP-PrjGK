@@ -436,14 +436,12 @@ def main() -> None:
             data["boxes"] = boxes
             cache_f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 2. Copy 2 cặp ảnh vào gói sample và ghi cả Label.txt (cột dọc) + Label_char.txt (từng chữ)
+    # 2. Copy 2 cặp ảnh vào gói sample và ghi Label.txt + fileState.txt chuẩn PPOCRLabel (theo cột dọc)
     for img_name in ch_annotations:
         src_img = out_book_dir / "ch" / img_name
         shutil.copy2(src_img, sample_ch_dir / img_name)
     write_ppocr_files(sample_ch_dir, ch_annotations, is_char_level=False)
-    ch_char_annotations = get_sample_ch_char_annotations(sample_ch_dir, ch_annotations)
-    write_ppocr_files(sample_ch_dir, ch_char_annotations, is_char_level=True)
-    write_ppocr_files(out_book_dir / "ch", ch_char_annotations, is_char_level=True)
+    write_ppocr_files(out_book_dir / "ch", ch_annotations, is_char_level=False)
 
     for img_name in vi_annotations:
         src_img = out_book_dir / "vi" / img_name
@@ -526,13 +524,6 @@ def main() -> None:
             preview_dir / f"preview_ch_{p_num}.jpg",
             color="#D93025",
             show_index=True,
-        )
-        render_bbox_preview(
-            sample_ch_dir / img_name,
-            ch_char_annotations[img_name],
-            preview_dir / f"preview_ch_{p_num}_char.jpg",
-            color="#00897B",
-            show_index=False,
         )
     for img_name, boxes in vi_annotations.items():
         render_bbox_preview(
