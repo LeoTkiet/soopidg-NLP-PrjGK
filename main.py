@@ -8,11 +8,17 @@ import argparse
 from pathlib import Path
 
 from src.config import load_config
-from src.step1_pdf_extractor import create_book_directory_structure, inspect_pdf_books
+from src.step1_pdf_extractor import (
+    create_book_directory_structure,
+    inspect_pdf_books,
+    process_all_books,
+)
 
 
 def run_environment_check(cfg: dict) -> None:
     """Kiểm tra cấu hình, đường dẫn dữ liệu gốc và từ điển."""
+    import unicodedata
+
     print("=== KIỂM TRA CẤU HÌNH DỰ ÁN HÁN NÔM - QUỐC NGỮ ===")
     print(f"- Mã nhóm (Group ID): {cfg['project']['group_id']}")
     print(f"- Ngưỡng độ tương đồng yêu cầu: >= {cfg['project']['min_similarity_threshold']}%")
@@ -23,16 +29,26 @@ def run_environment_check(cfg: dict) -> None:
     dict_dir = Path(cfg["paths"]["dictionary_entries_dir"])
 
     print(f"\n[1] Khảo sát 4 tập sách gốc ({raw_dir}):")
-    pdf_stats = {item["filename"]: item for item in inspect_pdf_books(raw_dir)}
+    pdf_stats = {
+        unicodedata.normalize("NFC", item["filename"]): item
+        for item in inspect_pdf_books(raw_dir)
+    }
     total_pages = 0
     for b in cfg.get("books", []):
-        fname = b["filename"]
-        b_path = raw_dir / fname
-        status = "OK" if b_path.exists() else "KHÔNG TÌM THẤY"
+        fname = unicodedata.normalize("NFC", b["filename"])
+        try:
+            from src.step1_pdf_extractor import find_pdf
+            b_path = find_pdf(raw_dir, fname)
+            status = "OK"
+        except FileNotFoundError:
+            status = "KHÔNG TÌM THẤY"
         stat = pdf_stats.get(fname, {})
         pages = int(stat.get("num_pages", 0))
         total_pages += pages
-        res = f"{stat.get('sample_img_width')}x{stat.get('sample_img_height')} ({stat.get('sample_img_ext')})"
+        w = stat.get("sample_img_width")
+        h = stat.get("sample_img_height")
+        ext = stat.get("sample_img_ext")
+        res = f"{w}x{h} ({ext})" if w is not None else "N/A"
         print(
             f"  + [{status}] {fname}\n"
             f"      Số trang: {pages} trang | Độ phân giải ảnh gốc: {res} | Phụ trách: {b['assigned_member']}"
@@ -72,6 +88,8 @@ def main() -> None:
         run_environment_check(cfg)
     elif args.step == "init":
         run_init_folders(cfg)
+    elif args.step == "extract":
+        process_all_books(cfg)
     else:
         print(
             f"Bước '{args.step}' đang ở dạng khung (skeleton). "
