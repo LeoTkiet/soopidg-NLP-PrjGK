@@ -3,30 +3,69 @@ project:
   min_similarity_threshold: 95.0
 
 paths:
-  raw_data_dir: "D:/soopidg-NLP-PrjGK/Data"
-  dictionary_entries_dir: "D:/soopidg-NLP-PrjGK/dictionaries-04-11-2026/entries"
-  cache_dir: "D:/soopidg-NLP-PrjGK/cache"
-  output_dir: "D:/soopidg-NLP-PrjGK/output"
-  submission_dir: "D:/soopidg-NLP-PrjGK/submission"
+  raw_data_dir: "Data"
+  dictionary_entries_dir: "dictionaries-04-11-2026/entries"
+  cache_dir: "cache"
+  output_dir: "output"
+  submission_dir: "submission"
 
 books:
-  - id: "book_1"
-    filename: "T1_Thánh Mẫu Phương Danh (Tập 1).pdf"
-    layout_type: "T1"
-    assigned_member: "Member_1"
-  - id: "book_2"
-    filename: "T1_Thánh Mẫu Phương Danh (Tập 2).pdf"
-    layout_type: "T1"
-    assigned_member: "Member_1"
-  - id: "book_3"
-    filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 1).pdf"
-    layout_type: "T1"
-    assigned_member: "Member_2"
-  - id: "book_4"
-    filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 2).pdf"
-    layout_type: "T1"
-    assigned_member: "Member_2"
-
+    - id: "book_1"
+      filename: "T1_Thánh Mẫu Phương Danh (Tập 1).pdf"
+      layout_type: "T1"
+      assigned_member: "Member_1"
+      page_range: null
+      rotate: []
+      classify:
+        misc:  [[1, 1], [3, 3], [5, 5], [11, 11], [231, 231], [446, 446]]
+        blank: [[2, 2], [4, 4], [6, 6], [12, 12], [18, 18], [226, 226], [232, 232], [233, 233], [455, 455]]
+        intro: [[7, 10]]
+        toc:   [[15, 17], [447, 454]]
+        vi:    [[13, 14], [19, 225]]
+        ref:   [[227, 230]]
+        ch:    [[234, 445]]
+    - id: "book_2"
+      filename: "T1_Thánh Mẫu Phương Danh (Tập 2).pdf"
+      layout_type: "T1"
+      assigned_member: "Member_1"
+      page_range: null
+      rotate: []
+      classify:
+        misc:  [[1, 1], [3, 3], [5, 5], [7, 7], [153, 153], [156, 156]]
+        blank: [[2, 2], [4, 4], [6, 6], [155, 155], [157, 158], [302, 302], [311, 311]]
+        intro: []
+        toc:   [[305, 310]]
+        vi:    [[8, 152]]
+        ref:   [[154, 154]]
+        ch:    [[159, 303]]
+    - id: "book_3"
+      filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 1).pdf"
+      layout_type: "T1"
+      assigned_member: "Member_2"
+      page_range: null
+      rotate: []
+      classify:
+        misc:  [[1, 1], [3, 3], [7, 7], [9, 10], [201, 201]]
+        blank: [[2, 2], [4, 4], [8, 8], [198, 198], [202, 203], [277, 277], [386, 386], [388, 388]]
+        intro: [[5, 6]]
+        toc:   [[11, 16], [381, 385], [387, 387]]
+        vi:    [[17, 197]]
+        ref:   [[199, 200]]
+        ch:    [[204, 380]]
+    - id: "book_4"
+      filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 2).pdf"
+      layout_type: "T1"
+      assigned_member: "Member_2"
+      page_range: null
+      rotate: []
+      classify:
+        misc:  [[1, 1], [3, 3], [5, 5], [7, 7], [141, 141], [156, 156]]
+        blank: [[2, 2], [4, 4], [6, 6], [8, 8], [140, 140], [142, 143], [272, 272], [277, 277]]
+        intro: []
+        toc:   [[273, 276]]
+        vi:    [[9, 138]]
+        ref:   [[139, 139]]
+        ch:    [[144, 271]]
 kimhannom_api:
   base_url: "https://kimhannom.fit.hcmus.edu.vn"
   # Giới hạn số lượt gọi trên website: 25/phút, 50/giờ, 200/ngày, 600/tuần
