@@ -4,7 +4,7 @@ project:
 
 paths:
   raw_data_dir: "D:/soopidg-NLP-PrjGK/Data"
-  dictionary_entries_dir: "D:/soopidg-NLP-PrjGK/dictionaries-04-11-2026/entries"
+  dictionary_entries_dir: "D:/soopidg-NLP-PrjGK/Data/dictionaries-04-11-2026/entries"
   cache_dir: "D:/soopidg-NLP-PrjGK/cache"
   output_dir: "D:/soopidg-NLP-PrjGK/output"
   submission_dir: "D:/soopidg-NLP-PrjGK/submission"
@@ -14,18 +14,196 @@ books:
     filename: "T1_Thánh Mẫu Phương Danh (Tập 1).pdf"
     layout_type: "T1"
     assigned_member: "Member_1"
+    total_pdf_pages: 455
+    quality_check:
+      rotated_pdf_pages: [233, 245, 259, 263, 264, 270, 273, 290, 294, 313, 315, 317, 321, 330, 335, 343, 345, 347, 348, 349, 354, 362, 379, 389, 409, 419, 425, 429, 434]
+      upside_down_pages: []
+      damaged_or_blurry_over_20pct: []
+      duplicate_pages: []
+      needs_updated_pdf: false
+    page_mapping:
+      intro:
+        - [1, 1]
+        - [3, 3]
+        - [5, 5]
+        - [7, 10]
+      vi:
+        - [13, 17]
+        - [19, 225]
+      ch:
+        - [234, 446]
+      toc:
+        - [447, 454]
+      blank:
+        - [2, 2]
+        - [4, 4]
+        - [6, 6]
+        - [12, 12]
+        - [18, 18]
+        - [226, 226]
+        - [232, 233]
+        - [455, 455]
+      misc:
+        - [11, 11]    # Trang phân mục: BẢN QUỐC NGỮ
+        - [227, 230]  # Trang CHÚ THÍCH (1) - (64)
+        - [231, 231]  # Trang phân mục: BẢN CHỮ NÔM
+    alignment_note: >
+      Bản Quốc ngữ (vi) gồm 212 trang (5 trang đầu 13-17 ứng với bìa/mục lục Nôm 446-441;
+      207 trang nội dung 19-225 ứng với trang Nôm 440-234). Bản Hán Nôm (ch) gồm 213 trang
+      (234-446). Từ trang 19 đến 225, công thức đối ứng 1-1: Trang_PDF_Quốc_Ngữ + Trang_PDF_Hán_Nôm = 459.
+
   - id: "book_2"
     filename: "T1_Thánh Mẫu Phương Danh (Tập 2).pdf"
     layout_type: "T1"
     assigned_member: "Member_1"
+    total_pdf_pages: 311
+    quality_check:
+      upside_down_pages: []
+      damaged_or_blurry_over_20pct: []
+      duplicate_pages: []
+      needs_updated_pdf: false
+    page_mapping:
+      intro:
+        - [1, 1]
+        - [3, 3]
+        - [5, 5]
+      vi:
+        - [8, 152]
+      ch:
+        - [159, 303]
+      toc:
+        - [305, 310]
+      blank:
+        - [2, 2]
+        - [4, 4]
+        - [6, 6]
+        - [155, 155]
+        - [157, 158]
+        - [304, 304]
+        - [311, 311]
+      misc:
+        - [7, 7]      # Trang phân mục: BẢN QUỐC NGỮ
+        - [153, 153]  # Trang ghi chú: (BỊ RÁCH TỪ ĐÂY)
+        - [154, 154]  # Trang CHÚ THÍCH (65) - (76)
+        - [156, 156]  # Trang phân mục: BẢN CHỮ NÔM
+    alignment_note: >
+      Bản Quốc ngữ (vi) có 145 trang (trang PDF 8-152, trang sách 7-151).
+      Bản Hán Nôm (ch) có 145 trang (trang PDF 159-303, trang sách 157-301).
+      Cặp trang đối ứng song ngữ 1-1: Trang_PDF_Quốc_Ngữ + Trang_PDF_Hán_Nôm = 311
+      (hoặc Trang_Sách_Quốc_Ngữ + Trang_Sách_Hán_Nôm = 308).
+
   - id: "book_3"
     filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 1).pdf"
     layout_type: "T1"
     assigned_member: "Member_2"
+    total_pdf_pages: 388
+    quality_check:
+      upside_down_pages: []
+      damaged_or_blurry_over_20pct: []
+      duplicate_pages: [77, 78, 83, 84, 107, 108, 117, 118, 121, 122, 125, 126, 129, 130, 145, 146, 161, 162, 165, 166, 169, 170, 171, 172, 181, 182, 279, 280, 287, 288, 309, 310, 311, 312, 313, 314, 345, 346, 359, 360, 387, 388]
+      needs_updated_pdf: false
+    page_mapping:
+      intro:
+        - [1, 1]
+        - [3, 3]
+        - [5, 6]
+      vi:
+        - [9, 76]
+        - [79, 82]
+        - [85, 106]
+        - [109, 116]
+        - [119, 120]
+        - [123, 124]
+        - [127, 128]
+        - [131, 144]
+        - [147, 160]
+        - [163, 164]
+        - [167, 168]
+        - [173, 180]
+        - [183, 197]
+      ch:
+        - [204, 278]
+        - [281, 286]
+        - [289, 308]
+        - [315, 344]
+        - [347, 358]
+        - [361, 380]
+      toc:
+        - [381, 385]
+      blank:
+        - [2, 2]
+        - [4, 4]
+        - [8, 8]
+        - [198, 198]
+        - [202, 203]
+        - [386, 386]
+        - [388, 388]
+      misc:
+        - [7, 7]        # Trang phân mục: BẢN QUỐC NGỮ
+        - [77, 78]      # Trang vi quét đúp (trùng 73-74)
+        - [83, 84]      # Trang vi quét đúp (trùng 81-82)
+        - [107, 108]    # Trang vi quét đúp (trùng 105-106)
+        - [117, 118]    # Trang vi quét đúp (trùng 115-116)
+        - [121, 122]    # Trang vi quét đúp (trùng 119-120)
+        - [125, 126]    # Trang vi quét đúp (trùng 123-124)
+        - [129, 130]    # Trang vi quét đúp (trùng 127-128)
+        - [145, 146]    # Trang vi quét đúp (trùng 143-144)
+        - [161, 162]    # Trang vi quét đúp (trùng 159-160)
+        - [165, 166]    # Trang vi quét đúp (trùng 163-164)
+        - [169, 172]    # Trang vi quét đúp (trùng 167-168)
+        - [181, 182]    # Trang vi quét đúp (trùng 179-180)
+        - [199, 200]    # Trang CHÚ THÍCH (1) - (35)
+        - [201, 201]    # Trang phân mục: BẢN CHỮ NÔM
+        - [279, 280]    # Trang ch quét đúp (trùng 277-278)
+        - [287, 288]    # Trang ch quét đúp (trùng 285-286)
+        - [309, 314]    # Trang ch quét đúp ngược (trùng 284-277)
+        - [345, 346]    # Trang ch quét đúp (trùng 343-344)
+        - [359, 360]    # Trang ch quét đúp (trùng 357-358)
+        - [387, 387]    # Trang toc quét đúp (trùng 385)
+    alignment_note: >
+      Sau khi loại bỏ 26 trang vi quét đúp và 14 trang ch quét đúp, Bản Quốc ngữ (vi) có đúng
+      163 trang (trang sách 9 đến 171) và Bản Hán Nôm (ch) có đúng 163 trang (trang sách 178 đến 340).
+      Cặp trang đối ứng song ngữ 1-1: Trang_Sách_Quốc_Ngữ + Trang_Sách_Hán_Nôm = 349.
+
   - id: "book_4"
     filename: "T1_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 2).pdf"
     layout_type: "T1"
     assigned_member: "Member_2"
+    total_pdf_pages: 277
+    quality_check:
+      upside_down_pages: []
+      damaged_or_blurry_over_20pct: []
+      duplicate_pages: [5, 6, 95, 96] # 5-6 trùng 3-4; 95-96 trùng 93-94
+      needs_updated_pdf: false
+    page_mapping:
+      intro:
+        - [1, 1]
+        - [3, 3]
+      vi:
+        - [9, 94]
+        - [97, 138]
+      ch:
+        - [144, 271]
+      toc:
+        - [272, 275]
+      blank:
+        - [2, 2]
+        - [4, 4]
+        - [6, 6]
+        - [8, 8]
+        - [140, 140]
+        - [142, 143]
+        - [276, 277]
+      misc:
+        - [5, 5]      # Trang bìa phụ quét đúp
+        - [7, 7]      # Trang phân mục: BẢN QUỐC NGỮ
+        - [95, 96]    # Trang nội dung vi quét đúp
+        - [139, 139]  # Trang CHÚ THÍCH
+        - [141, 141]  # Trang phân mục: BẢN CHỮ NÔM
+    alignment_note: >
+      Bản Quốc ngữ (vi) có 128 trang (từ trang sách 7 đến 134, đánh số tham chiếu
+      ngược từ 267 về 140). Bản Hán Nôm (ch) có 128 trang (từ trang sách 140 đến 267).
+      Cặp trang đối ứng song ngữ theo công thức: Trang_Sách_Quốc_Ngữ + Trang_Sách_Hán_Nôm = 274.
 
 kimhannom_api:
   base_url: "https://kimhannom.fit.hcmus.edu.vn"
@@ -42,6 +220,10 @@ kimhannom_api:
     reading_direction: 1 # 1: Dọc (mặc định) | 2: Ngang
     epitaph: 0           # 0: Văn bản thông thường | 1: Văn bia
     tag: null
+  bbox_padding:
+    sinonom_pad_x: 6     # Mở rộng mỗi bên trái/phải +6px để bao trọn nét chữ Nôm (theo góp ý giảng viên)
+    sinonom_pad_y: 8     # Mở rộng đầu/cuối cột +8px để không cắt nét đầu và cuối cột
+    min_col_gap: 2       # Khoảng hở tối thiểu giữa 2 cột dọc liền kề (chống chồng lấn)
 
 dictionaries:
   # Các nguồn ưu tiên tra cứu âm đọc Hán Nôm - Quốc ngữ
@@ -54,4 +236,3 @@ dictionaries:
     - "unihan.jsonl"
   variant_sources:
     - "cjkvi_variants.jsonl"
-

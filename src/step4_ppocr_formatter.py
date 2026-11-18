@@ -25,16 +25,43 @@ def validate_bbox_item(item: Dict[str, Any]) -> bool:
     return True
 
 
-def sort_boxes_sinonom_vertical(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def sort_boxes_sinonom_vertical(
+    boxes: List[Dict[str, Any]], col_tolerance: int = 25
+) -> List[Dict[str, Any]]:
     """
     Sắp xếp thứ tự bounding box cho chữ Nôm viết dọc:
-    Từ phải sang trái (x giảm dần), trong cùng cột thì từ trên xuống dưới (y tăng dần).
-    TODO (Thành viên 1 & 2): Tinh chỉnh ngưỡng phân cụm cột dọc (column clustering threshold) cho sách 2 trang (T1).
+    Từ phải sang trái (cột x giảm dần theo ngưỡng phân cụm col_tolerance),
+    trong cùng cột thì từ trên xuống dưới (y tăng dần).
     """
-    return sorted(
-        boxes,
-        key=lambda b: (-b["points"][0][0], b["points"][0][1]),
-    )
+    if not boxes:
+        return []
+
+    # Phân cụm các box có tâm X gần nhau (<= col_tolerance) vào cùng một cột dọc
+    items = []
+    for b in boxes:
+        pts = b["points"]
+        cx = sum(p[0] for p in pts) / 4.0
+        cy = min(p[1] for p in pts)
+        items.append((cx, cy, b))
+
+    # Sắp xếp giảm dần theo cx để gom cụm cột từ phải sang trái
+    items.sort(key=lambda x: -x[0])
+    columns: List[List[Tuple[float, float, Dict[str, Any]]]] = []
+    for item in items:
+        if not columns:
+            columns.append([item])
+        else:
+            mean_cx = sum(x[0] for x in columns[-1]) / len(columns[-1])
+            if abs(item[0] - mean_cx) <= col_tolerance:
+                columns[-1].append(item)
+            else:
+                columns.append([item])
+
+    sorted_boxes: List[Dict[str, Any]] = []
+    for col in columns:
+        col.sort(key=lambda x: x[1])  # Trên xuống dưới trong cùng một cột
+        sorted_boxes.extend(x[2] for x in col)
+    return sorted_boxes
 
 
 def sort_boxes_quoc_ngu(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -64,6 +91,75 @@ def scale_bboxes(
         ]
         scaled.append(new_box)
     return scaled
+
+
+def _order_quad_tl_tr_br_bl(pts: List[List[int]]) -> List[List[int]]:
+    """Chuẩn hóa thứ tự 4 đỉnh của đa giác về đúng [TL, TR, BR, BL]."""
+    sorted_by_y = sorted(pts, key=lambda p: (p[1], p[0]))
+    top_two = sorted(sorted_by_y[:2], key=lambda p: p[0])
+    bot_two = sorted(sorted_by_y[2:], key=lambda p: p[0])
+    return [list(top_two[0]), list(top_two[1]), list(bot_two[1]), list(bot_two[0])]
+
+
+def expand_sinonom_boxes(
+    boxes: List[Dict[str, Any]],
+    img_width: int = 800,
+    img_height: int = 1135,
+    pad_x: int = 6,
+    pad_y: int = 8,
+    min_col_gap: int = 2,
+) -> List[Dict[str, Any]]:
+    """
+    Mở rộng kích thước bounding box cho chữ Nôm theo góp ý của giảng viên:
+    - Tăng lề ngang `pad_x` (mặc định +6px mỗi bên) và lề dọc `pad_y` (mặc định +8px mỗi đầu)
+      để bao trọn hoàn toàn các nét phẩy/mác và nét đầu-cuối cột của chữ Nôm, tránh cắt nét.
+    - Tự động bảo vệ chống chồng lấn giữa hai cột liền kề có khoảng Y giao nhau (giữ khoảng hở >= min_col_gap).
+    - Kẹp tọa độ an toàn trong biên ảnh [0, img_width - 1] x [0, img_height - 1].
+    """
+    if not boxes:
+        return []
+
+    expanded: List[Dict[str, Any]] = []
+    for box in boxes:
+        tl, tr, br, bl = _order_quad_tl_tr_br_bl(box["points"])
+        new_pts = [
+            [max(0, tl[0] - pad_x), max(0, tl[1] - pad_y)],
+            [min(img_width - 1, tr[0] + pad_x), max(0, tr[1] - pad_y)],
+            [min(img_width - 1, br[0] + pad_x), min(img_height - 1, br[1] + pad_y)],
+            [max(0, bl[0] - pad_x), min(img_height - 1, bl[1] + pad_y)],
+        ]
+        new_box = dict(box)
+        new_box["points"] = new_pts
+        expanded.append(new_box)
+
+    # Bảo vệ chống chồng lấn ngang giữa các cột lân cận có khoảng Y giao nhau
+    # Sắp xếp tạm theo tâm X tăng dần (từ trái sang phải)
+    indexed = sorted(
+        enumerate(expanded),
+        key=lambda kv: sum(p[0] for p in kv[1]["points"]) / 4.0,
+    )
+    for idx_pos in range(len(indexed) - 1):
+        _, left_box = indexed[idx_pos]
+        _, right_box = indexed[idx_pos + 1]
+        lp = left_box["points"]
+        rp = right_box["points"]
+
+        ly_min = min(p[1] for p in lp)
+        ly_max = max(p[1] for p in lp)
+        ry_min = min(p[1] for p in rp)
+        ry_max = max(p[1] for p in rp)
+        # Chỉ kiểm tra va chạm nếu 2 cột có phần Y chồng lên nhau đáng kể
+        if min(ly_max, ry_max) - max(ly_min, ry_min) <= 10:
+            continue
+
+        # Kiểm tra đỉnh trên (TR của left vs TL của right) và đỉnh dưới (BR của left vs BL của right)
+        for l_corner, r_corner in ((1, 0), (2, 3)):
+            if lp[l_corner][0] + min_col_gap > rp[r_corner][0]:
+                mid = (lp[l_corner][0] + rp[r_corner][0]) // 2
+                lp[l_corner][0] = max(0, mid - min_col_gap // 2)
+                rp[r_corner][0] = min(img_width - 1, lp[l_corner][0] + min_col_gap)
+
+    return sort_boxes_sinonom_vertical(expanded)
 
 
 def write_ppocr_files(

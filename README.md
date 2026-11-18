@@ -42,6 +42,7 @@ D:\PrjGK\
 ├── README.md                        # Mô tả dự án và môi trường chạy (file bắt buộc ở root)
 ├── USER_GUIDE.md                    # Hướng dẫn chạy dự án từ đầu đến cuối (file bắt buộc ở root)
 ├── docs/                            # Thư mục quản lý tập trung toàn bộ tài liệu dự án
+│   ├── PROGRESS_REPORT.md           # Báo cáo tiến độ thực tế & kế hoạch công việc tiếp theo
 │   ├── ProjectDescription.md        # Mô tả chi tiết dự án làm gì, cần làm gì & kiến trúc Pipeline
 │   ├── PLAN_3_MEMBERS.md            # Kế hoạch chi tiết & phân công cho nhóm 3 người
 │   ├── USER_GUIDE.md                # Bản sao hướng dẫn sử dụng trong docs/

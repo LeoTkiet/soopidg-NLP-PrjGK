@@ -3,15 +3,27 @@ Bước 1 - 3: Kiểm tra nguồn dữ liệu, chiết xuất hình ảnh độ 
 đặt tên theo đúng quy định và phân loại vào các thư mục (ch, vi, intro, ref, toc, blank, misc).
 """
 
+import io
+import json
+import re
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 try:
     import pymupdf as fitz  # PyMuPDF
 except ImportError:
     import fitz  # type: ignore
 
+from PIL import Image
+
 
 VALID_SUBFOLDERS = ["ch", "vi", "intro", "ref", "toc", "blank", "misc"]
+
+_ROTATE_MAP = {
+    90: Image.Transpose.ROTATE_270,
+    180: Image.Transpose.ROTATE_180,
+    270: Image.Transpose.ROTATE_90,
+}
 
 
 def format_page_number(page_idx_1based: int, total_pages: int) -> str:
@@ -55,6 +67,35 @@ def create_book_directory_structure(output_root: Path, book_name: str) -> Dict[s
     return paths
 
 
+def _resolve_page_image_xrefs(doc: Any) -> List[Optional[int]]:
+    """
+    Xác định xref của ảnh scan gốc được vẽ trên từng trang PDF.
+    Xử lý trường hợp file PDF dùng chung từ điển /Resources /XObject cho mọi trang
+    (khiến page.get_images() trả về hàng trăm ảnh thay vì 1 ảnh).
+    """
+    if len(doc) == 0:
+        return []
+    p0_imgs = doc[0].get_images(full=True)
+    if len(p0_imgs) > 1:
+        name_map = {im[7]: im[0] for im in p0_imgs}
+        xrefs: List[Optional[int]] = []
+        for idx in range(len(doc)):
+            contents = doc[idx].read_contents().decode("latin1", errors="ignore")
+            names = re.findall(r"/(\S+)\s+Do", contents)
+            matched_xref = next((name_map[n] for n in names if n in name_map), None)
+            if matched_xref is None:
+                imgs = doc[idx].get_images(full=True)
+                matched_xref = imgs[0][0] if imgs else None
+            xrefs.append(matched_xref)
+        return xrefs
+
+    xrefs = []
+    for idx in range(len(doc)):
+        imgs = doc[idx].get_images(full=True)
+        xrefs.append(imgs[0][0] if imgs else None)
+    return xrefs
+
+
 def inspect_pdf_books(raw_data_dir: Path) -> List[Dict[str, object]]:
     """
     Khảo sát chi tiết các file PDF trong thư mục Data/:
@@ -68,10 +109,9 @@ def inspect_pdf_books(raw_data_dir: Path) -> List[Dict[str, object]]:
         if num_pages > 0:
             imgs = doc[0].get_images(full=True)
             if imgs:
-                info = doc.extract_image(imgs[0][0])
-                sample_w = info.get("width", 0)
-                sample_h = info.get("height", 0)
-                sample_ext = info.get("ext", "")
+                sample_w = imgs[0][2]
+                sample_h = imgs[0][3]
+                sample_ext = "jpeg" if imgs[0][8] == "DCTDecode" else imgs[0][8]
         results.append(
             {
                 "filename": pdf_path.name,
@@ -86,51 +126,300 @@ def inspect_pdf_books(raw_data_dir: Path) -> List[Dict[str, object]]:
     return results
 
 
+def build_page_folder_map(
+    page_mapping: Optional[Dict[str, List[List[int]]]],
+    total_pages: int,
+) -> Dict[int, str]:
+    """
+    Chuyển cấu hình page_mapping (danh sách các khoảng [start, end] 1-based)
+    thành bảng ánh xạ {page_num: subfolder_name}.
+    """
+    mapping: Dict[int, str] = {}
+    if page_mapping:
+        for folder_name, ranges in page_mapping.items():
+            if folder_name not in VALID_SUBFOLDERS:
+                continue
+            for r in ranges or []:
+                if isinstance(r, (list, tuple)) and len(r) == 2:
+                    start_p, end_p = int(r[0]), int(r[1])
+                    for p in range(start_p, end_p + 1):
+                        mapping[p] = folder_name
+    for p in range(1, total_pages + 1):
+        mapping.setdefault(p, "misc")
+    return mapping
+
+
+def _save_page_image(doc: Any, page: Any, xref: Optional[int], out_path: Path) -> None:
+    """
+    Lưu ảnh gốc của 1 trang PDF ra file .jpg giữ nguyên độ phân giải gốc,
+    đồng thời tự động xoay đúng chiều nếu trang PDF có thuộc tính rotation (90/180/270).
+    """
+    rot = page.rotation % 360
+    if xref is not None:
+        raw_bytes = doc.xref_stream_raw(xref)
+        if rot == 0:
+            # Luồng JPEG gốc (DCTDecode) ghi trực tiếp để không suy giảm chất lượng
+            if raw_bytes[:2] == b"\xff\xd8":
+                out_path.write_bytes(raw_bytes)
+                return
+            pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+            pil_img.save(str(out_path), format="JPEG", quality=95, subsampling=0)
+            return
+        else:
+            pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+            if rot in _ROTATE_MAP:
+                pil_img = pil_img.transpose(_ROTATE_MAP[rot])
+            pil_img.save(str(out_path), format="JPEG", quality=95, subsampling=0)
+            return
+
+    pix = page.get_pixmap(dpi=300)
+    pix.save(str(out_path), jpg_quality=95)
+
+
 def extract_images_from_pdf(
     pdf_path: Path,
     output_dir: Path,
-    page_range: Optional[tuple] = None,
+    page_range: Optional[Tuple[int, int]] = None,
 ) -> List[Path]:
     """
     Chiết xuất hình ảnh từ file PDF với độ phân giải gốc cao nhất (Quy định Trang 5):
-    - Nếu trang PDF chứa 1 ảnh scan gốc nhúng (embedded image), trích xuất và lưu dưới dạng .jpg
-      với đúng độ phân giải gốc (ví dụ 3144 x 2096) và chất lượng JPEG cao nhất (quality=95).
-    - Nếu trang không chứa ảnh nhúng đơn lẻ thì render trang với DPI cao.
+    - Trích xuất ảnh scan gốc nhúng bên trong và lưu dưới dạng .jpg.
     - Đặt tên theo cú pháp: <Tên sách>.<Số thứ tự trang>[_<Số thứ tự hình ảnh>].jpg
     """
-    from PIL import Image
-    import io
-
-    book_name = pdf_path.stem  # Giữ nguyên tên sách gốc
+    book_name = pdf_path.stem
     output_dir.mkdir(parents=True, exist_ok=True)
 
     doc = fitz.open(pdf_path)
     total_pages = len(doc)
     start_page = page_range[0] if page_range else 1
     end_page = page_range[1] if page_range else total_pages
+    page_xrefs = _resolve_page_image_xrefs(doc)
 
     saved_files: List[Path] = []
     for page_num in range(start_page, end_page + 1):
         page = doc[page_num - 1]
+        xref = page_xrefs[page_num - 1]
         img_filename = build_image_filename(book_name, page_num, total_pages)
         out_path = output_dir / img_filename
-
-        imgs = page.get_images(full=True)
-        if len(imgs) == 1:
-            xref = imgs[0][0]
-            base_image = doc.extract_image(xref)
-            image_bytes = base_image["image"]
-            ext = base_image.get("ext", "").lower()
-            if ext in ("jpg", "jpeg"):
-                out_path.write_bytes(image_bytes)
-            else:
-                pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                pil_img.save(str(out_path), format="JPEG", quality=95)
-        else:
-            pix = page.get_pixmap(dpi=300)
-            pix.save(str(out_path), jpg_quality=95)
-
+        _save_page_image(doc, page, xref, out_path)
         saved_files.append(out_path)
 
     doc.close()
     return saved_files
+
+
+def extract_and_classify_book(
+    pdf_path: Path,
+    output_root: Path,
+    page_mapping: Optional[Dict[str, List[List[int]]]] = None,
+) -> Dict[str, int]:
+    """
+    Chiết xuất toàn bộ trang ảnh của 1 cuốn sách PDF và phân loại trực tiếp vào
+    các thư mục con (ch, vi, intro, ref, toc, blank, misc) theo page_mapping.
+    Trả về thống kê số lượng ảnh trong từng thư mục con.
+    """
+    book_name = pdf_path.stem
+    paths = create_book_directory_structure(output_root, book_name)
+
+    doc = fitz.open(pdf_path)
+    total_pages = len(doc)
+    page_xrefs = _resolve_page_image_xrefs(doc)
+    folder_map = build_page_folder_map(page_mapping, total_pages)
+
+    counts: Dict[str, int] = {sub: 0 for sub in VALID_SUBFOLDERS}
+    for page_num in range(1, total_pages + 1):
+        page = doc[page_num - 1]
+        xref = page_xrefs[page_num - 1]
+        target_sub = folder_map[page_num]
+        img_filename = build_image_filename(book_name, page_num, total_pages)
+
+        # Xóa ảnh cũ nếu từng nằm ở thư mục con khác
+        for sub in VALID_SUBFOLDERS:
+            if sub != target_sub:
+                old_file = paths[sub] / img_filename
+                if old_file.exists():
+                    old_file.unlink()
+
+        out_path = paths[target_sub] / img_filename
+        _save_page_image(doc, page, xref, out_path)
+        counts[target_sub] += 1
+
+    doc.close()
+    return counts
+
+
+def run_extract_all_books(cfg: Dict[str, Any], book_filter: Optional[str] = None) -> None:
+    """
+    Điều phối chiết xuất & phân loại ảnh cho tất cả các sách trong config.yaml
+    (hoặc lọc theo id/tên sách nếu truyền book_filter).
+    """
+    raw_dir = Path(cfg["paths"]["raw_data_dir"])
+    out_root = Path(cfg["paths"]["output_dir"])
+
+    print("=== CHIẾT XUẤT & PHÂN LOẠI ẢNH TỪ PDF (ĐỘ PHÂN GIẢI GỐC) ===")
+    total_extracted = 0
+    for b in cfg.get("books", []):
+        fname = b.get("filename") or b.get("file_name")
+        book_id = b.get("id", "")
+        if book_filter and book_filter not in (book_id, fname, Path(fname).stem):
+            continue
+
+        pdf_path = raw_dir / fname
+        if not pdf_path.exists():
+            print(f"  [LỖI] Không tìm thấy file PDF: {pdf_path}")
+            continue
+
+        print(f"\n-> Đang xử lý [{book_id}] {fname} ...")
+        counts = extract_and_classify_book(
+            pdf_path=pdf_path,
+            output_root=out_root,
+            page_mapping=b.get("page_mapping"),
+        )
+        book_total = sum(counts.values())
+        total_extracted += book_total
+        summary = ", ".join(f"{k}: {v}" for k, v in counts.items() if v > 0)
+        print(f"   Hoàn tất {book_total} trang ({summary})")
+
+    print(f"\n=> TỔNG SỐ ẢNH ĐÃ CHIẾT XUẤT & PHÂN LOẠI: {total_extracted} ảnh.")
+
+
+def _expand_ranges(ranges: Optional[List[List[int]]]) -> List[int]:
+    """Mở rộng danh sách khoảng [start, end] (1-based, inclusive) thành danh sách số trang tăng dần."""
+    pages: List[int] = []
+    for r in ranges or []:
+        if isinstance(r, (list, tuple)) and len(r) == 2:
+            pages.extend(range(int(r[0]), int(r[1]) + 1))
+    return sorted(set(pages))
+
+
+def generate_book_image_map(
+    book_cfg: Dict[str, Any],
+    output_root: Path,
+) -> Path:
+    """
+    Tạo file `<Tên sách>_image_map.json` theo đúng Quy định đồ án v2.4 (Trang 9 - 10):
+    {
+      "pairs": [
+        { "ch": ["Book.440.jpg"], "vi": ["Book.019.jpg"] },
+        ...
+      ]
+    }
+    - Với loại T1: phần Quốc ngữ (`vi`) đọc tăng dần, phần Hán Nôm (`ch`) đọc giảm dần.
+    - Xử lý trường hợp chênh lệch 1 trang bìa/mục lục đầu sách (`book_1`: 5 trang `vi` 13-17 ứng với 6 trang `ch` 446-441).
+    """
+    fname = book_cfg.get("filename") or book_cfg.get("file_name")
+    book_name = Path(fname).stem
+    total_pages = int(book_cfg.get("total_pdf_pages", 0))
+    pm = book_cfg.get("page_mapping", {})
+
+    vi_pages = _expand_ranges(pm.get("vi"))
+    ch_pages_desc = list(reversed(_expand_ranges(pm.get("ch"))))
+
+    pairs: List[Dict[str, Any]] = []
+    if len(vi_pages) == len(ch_pages_desc):
+        for ch_p, vi_p in zip(ch_pages_desc, vi_pages):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+    elif len(ch_pages_desc) == len(vi_pages) + 1 and book_cfg.get("id") == "book_1":
+        # book_1: trang vi 13 (bìa + đầu mục lục) tương ứng 2 trang ch [446, 445],
+        # các trang còn lại (14..17 và 19..225) đối ứng 1-1 với 444..441 và 440..234 (vi + ch = 459).
+        pairs.append(
+            {
+                "ch": [
+                    build_image_filename(book_name, ch_pages_desc[0], total_pages),
+                    build_image_filename(book_name, ch_pages_desc[1], total_pages),
+                ],
+                "vi": [build_image_filename(book_name, vi_pages[0], total_pages)],
+                "note": "Trang bìa và đầu mục lục Nôm (446, 445) tương ứng trang Quốc ngữ đầu tiên (013)",
+            }
+        )
+        for ch_p, vi_p in zip(ch_pages_desc[2:], vi_pages[1:]):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+    else:
+        min_len = min(len(ch_pages_desc), len(vi_pages))
+        for ch_p, vi_p in zip(ch_pages_desc[:min_len], vi_pages[:min_len]):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+
+    book_dir = output_root / book_name
+    book_dir.mkdir(parents=True, exist_ok=True)
+    map_path = book_dir / f"{book_name}_image_map.json"
+    map_path.write_text(
+        json.dumps({"pairs": pairs}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return map_path
+
+
+def build_updated_pdf_if_needed(
+    book_cfg: Dict[str, Any],
+    raw_dir: Path,
+    output_root: Path,
+) -> Optional[Path]:
+    """
+    Sao chép `<Tên sách>.pdf` vào `output/<Tên sách>/` và tạo `<Tên sách>_updated.pdf`
+    nếu sách có xoay trang (ví dụ `book_1` có 29 trang bị xoay 90/180/270 độ)
+    theo Quy định đồ án v2.4 (Trang 4, 8).
+    """
+    fname = book_cfg.get("filename") or book_cfg.get("file_name")
+    book_name = Path(fname).stem
+    src_pdf = raw_dir / fname
+    book_dir = output_root / book_name
+    book_dir.mkdir(parents=True, exist_ok=True)
+
+    dst_pdf = book_dir / fname
+    if src_pdf.exists() and not dst_pdf.exists():
+        shutil.copy2(src_pdf, dst_pdf)
+
+    qc = book_cfg.get("quality_check", {})
+    rotated = qc.get("rotated_pdf_pages") or []
+    if not rotated:
+        return None
+
+    # Ghép lại PDF từ toàn bộ các ảnh đã xoay chuẩn chiều trong thư mục con theo đúng thứ tự trang 1..N
+    total_pages = int(book_cfg.get("total_pdf_pages", 0))
+    folder_map = build_page_folder_map(book_cfg.get("page_mapping"), total_pages)
+    updated_pdf_path = book_dir / f"{book_name}_updated.pdf"
+
+    new_doc = fitz.open()
+    for page_num in range(1, total_pages + 1):
+        sub = folder_map[page_num]
+        img_name = build_image_filename(book_name, page_num, total_pages)
+        img_path = book_dir / sub / img_name
+        if not img_path.exists():
+            continue
+        with Image.open(img_path) as im:
+            w, h = im.size
+        page = new_doc.new_page(width=w, height=h)
+        page.insert_image(fitz.Rect(0, 0, w, h), filename=str(img_path))
+
+    new_doc.save(str(updated_pdf_path), deflate=True)
+    new_doc.close()
+    return updated_pdf_path
+
+
+def run_generate_image_maps(cfg: Dict[str, Any], book_filter: Optional[str] = None) -> None:
+    """Sinh file `<Tên sách>_image_map.json` chuẩn v2.4 cho tất cả các sách trong config.yaml."""
+    out_root = Path(cfg["paths"]["output_dir"])
+    print("=== TẠO FILE ÁNH XẠ HÌNH ẢNH (<Tên sách>_image_map.json - v2.4) ===")
+    for b in cfg.get("books", []):
+        fname = b.get("filename") or b.get("file_name")
+        book_id = b.get("id", "")
+        if book_filter and book_filter not in (book_id, fname, Path(fname).stem):
+            continue
+        map_path = generate_book_image_map(b, out_root)
+        data = json.loads(map_path.read_text(encoding="utf-8"))
+        print(f"  + [{book_id}] Đã xuất {map_path.name} ({len(data['pairs'])} cặp trang ch <-> vi)")
