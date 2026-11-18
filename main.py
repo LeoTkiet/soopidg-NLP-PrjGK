@@ -14,6 +14,7 @@ from src.step1_pdf_extractor import (
     create_book_directory_structure,
     inspect_pdf_books,
     run_extract_all_books,
+    run_generate_image_maps,
 )
 from src.step2_kimhannom_api import run_ocr_nom_pipeline
 
@@ -74,7 +75,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--step",
-        choices=["check", "init", "extract", "ocr-nom", "ocr-vi", "align", "evaluate", "package"],
+        choices=[
+            "check",
+            "init",
+            "extract",
+            "image-map",
+            "ocr-nom",
+            "ocr-vi",
+            "align",
+            "evaluate",
+            "validate",
+            "package",
+        ],
         default="check",
         help="Bước cần chạy trong pipeline",
     )
@@ -99,6 +111,8 @@ def main() -> None:
         run_init_folders(cfg)
     elif args.step == "extract":
         run_extract_all_books(cfg, book_filter=args.book)
+    elif args.step == "image-map":
+        run_generate_image_maps(cfg, book_filter=args.book)
     elif args.step == "ocr-nom":
         run_ocr_nom_pipeline(cfg, book_filter=args.book, max_pages=args.max_pages)
     else:

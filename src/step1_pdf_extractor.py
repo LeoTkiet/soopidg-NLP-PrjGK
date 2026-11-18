@@ -4,7 +4,9 @@ Bước 1 - 3: Kiểm tra nguồn dữ liệu, chiết xuất hình ảnh độ 
 """
 
 import io
+import json
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 try:
@@ -279,3 +281,145 @@ def run_extract_all_books(cfg: Dict[str, Any], book_filter: Optional[str] = None
         print(f"   Hoàn tất {book_total} trang ({summary})")
 
     print(f"\n=> TỔNG SỐ ẢNH ĐÃ CHIẾT XUẤT & PHÂN LOẠI: {total_extracted} ảnh.")
+
+
+def _expand_ranges(ranges: Optional[List[List[int]]]) -> List[int]:
+    """Mở rộng danh sách khoảng [start, end] (1-based, inclusive) thành danh sách số trang tăng dần."""
+    pages: List[int] = []
+    for r in ranges or []:
+        if isinstance(r, (list, tuple)) and len(r) == 2:
+            pages.extend(range(int(r[0]), int(r[1]) + 1))
+    return sorted(set(pages))
+
+
+def generate_book_image_map(
+    book_cfg: Dict[str, Any],
+    output_root: Path,
+) -> Path:
+    """
+    Tạo file `<Tên sách>_image_map.json` theo đúng Quy định đồ án v2.4 (Trang 9 - 10):
+    {
+      "pairs": [
+        { "ch": ["Book.440.jpg"], "vi": ["Book.019.jpg"] },
+        ...
+      ]
+    }
+    - Với loại T1: phần Quốc ngữ (`vi`) đọc tăng dần, phần Hán Nôm (`ch`) đọc giảm dần.
+    - Xử lý trường hợp chênh lệch 1 trang bìa/mục lục đầu sách (`book_1`: 5 trang `vi` 13-17 ứng với 6 trang `ch` 446-441).
+    """
+    fname = book_cfg.get("filename") or book_cfg.get("file_name")
+    book_name = Path(fname).stem
+    total_pages = int(book_cfg.get("total_pdf_pages", 0))
+    pm = book_cfg.get("page_mapping", {})
+
+    vi_pages = _expand_ranges(pm.get("vi"))
+    ch_pages_desc = list(reversed(_expand_ranges(pm.get("ch"))))
+
+    pairs: List[Dict[str, Any]] = []
+    if len(vi_pages) == len(ch_pages_desc):
+        for ch_p, vi_p in zip(ch_pages_desc, vi_pages):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+    elif len(ch_pages_desc) == len(vi_pages) + 1 and book_cfg.get("id") == "book_1":
+        # book_1: trang vi 13 (bìa + đầu mục lục) tương ứng 2 trang ch [446, 445],
+        # các trang còn lại (14..17 và 19..225) đối ứng 1-1 với 444..441 và 440..234 (vi + ch = 459).
+        pairs.append(
+            {
+                "ch": [
+                    build_image_filename(book_name, ch_pages_desc[0], total_pages),
+                    build_image_filename(book_name, ch_pages_desc[1], total_pages),
+                ],
+                "vi": [build_image_filename(book_name, vi_pages[0], total_pages)],
+                "note": "Trang bìa và đầu mục lục Nôm (446, 445) tương ứng trang Quốc ngữ đầu tiên (013)",
+            }
+        )
+        for ch_p, vi_p in zip(ch_pages_desc[2:], vi_pages[1:]):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+    else:
+        min_len = min(len(ch_pages_desc), len(vi_pages))
+        for ch_p, vi_p in zip(ch_pages_desc[:min_len], vi_pages[:min_len]):
+            pairs.append(
+                {
+                    "ch": [build_image_filename(book_name, ch_p, total_pages)],
+                    "vi": [build_image_filename(book_name, vi_p, total_pages)],
+                }
+            )
+
+    book_dir = output_root / book_name
+    book_dir.mkdir(parents=True, exist_ok=True)
+    map_path = book_dir / f"{book_name}_image_map.json"
+    map_path.write_text(
+        json.dumps({"pairs": pairs}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return map_path
+
+
+def build_updated_pdf_if_needed(
+    book_cfg: Dict[str, Any],
+    raw_dir: Path,
+    output_root: Path,
+) -> Optional[Path]:
+    """
+    Sao chép `<Tên sách>.pdf` vào `output/<Tên sách>/` và tạo `<Tên sách>_updated.pdf`
+    nếu sách có xoay trang (ví dụ `book_1` có 29 trang bị xoay 90/180/270 độ)
+    theo Quy định đồ án v2.4 (Trang 4, 8).
+    """
+    fname = book_cfg.get("filename") or book_cfg.get("file_name")
+    book_name = Path(fname).stem
+    src_pdf = raw_dir / fname
+    book_dir = output_root / book_name
+    book_dir.mkdir(parents=True, exist_ok=True)
+
+    dst_pdf = book_dir / fname
+    if src_pdf.exists() and not dst_pdf.exists():
+        shutil.copy2(src_pdf, dst_pdf)
+
+    qc = book_cfg.get("quality_check", {})
+    rotated = qc.get("rotated_pdf_pages") or []
+    if not rotated:
+        return None
+
+    # Ghép lại PDF từ toàn bộ các ảnh đã xoay chuẩn chiều trong thư mục con theo đúng thứ tự trang 1..N
+    total_pages = int(book_cfg.get("total_pdf_pages", 0))
+    folder_map = build_page_folder_map(book_cfg.get("page_mapping"), total_pages)
+    updated_pdf_path = book_dir / f"{book_name}_updated.pdf"
+
+    new_doc = fitz.open()
+    for page_num in range(1, total_pages + 1):
+        sub = folder_map[page_num]
+        img_name = build_image_filename(book_name, page_num, total_pages)
+        img_path = book_dir / sub / img_name
+        if not img_path.exists():
+            continue
+        with Image.open(img_path) as im:
+            w, h = im.size
+        page = new_doc.new_page(width=w, height=h)
+        page.insert_image(fitz.Rect(0, 0, w, h), filename=str(img_path))
+
+    new_doc.save(str(updated_pdf_path), deflate=True)
+    new_doc.close()
+    return updated_pdf_path
+
+
+def run_generate_image_maps(cfg: Dict[str, Any], book_filter: Optional[str] = None) -> None:
+    """Sinh file `<Tên sách>_image_map.json` chuẩn v2.4 cho tất cả các sách trong config.yaml."""
+    out_root = Path(cfg["paths"]["output_dir"])
+    print("=== TẠO FILE ÁNH XẠ HÌNH ẢNH (<Tên sách>_image_map.json - v2.4) ===")
+    for b in cfg.get("books", []):
+        fname = b.get("filename") or b.get("file_name")
+        book_id = b.get("id", "")
+        if book_filter and book_filter not in (book_id, fname, Path(fname).stem):
+            continue
+        map_path = generate_book_image_map(b, out_root)
+        data = json.loads(map_path.read_text(encoding="utf-8"))
+        print(f"  + [{book_id}] Đã xuất {map_path.name} ({len(data['pairs'])} cặp trang ch <-> vi)")
