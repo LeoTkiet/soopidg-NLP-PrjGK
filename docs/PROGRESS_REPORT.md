@@ -1,6 +1,7 @@
 # Báo Cáo Tiến Độ Dự Án & Kế Hoạch Tiếp Theo
-**Cập nhật lần cuối**: 07/11/2026  
-**Mã nhóm**: `24120356_24120386_24120399`
+**Cập nhật lần cuối**: 19/11/2026  
+**Mã nhóm**: `24120356_24120386_24120399`  
+**Báo cáo gửi giảng viên đợt 19/11**: Xem chi tiết tại [`docs/REPORT_19_11_2026.md`](REPORT_19_11_2026.md)
 
 ---
 
@@ -45,6 +46,17 @@
   - Tổng số chữ / âm tiết: **248 chữ Nôm $\leftrightarrow$ 248 âm tiết Quốc ngữ** (khớp 1-1 tuyệt đối 100%).
   - Số chữ màu đen (`#000000`): **241 / 248 chữ**; Số chữ màu đỏ (`#FF0000`): **7 chữ** (đều là âm tiết phiên âm tên riêng nước ngoài: *Li-gô-ri-ô*, *Ma-ri-a*, *Pha-lăng-côn*, *Âu-gu-tinh*).
   - **Độ tương đồng đạt `97.18%` ($\ge 95\%$ — ĐẠT CHUẨN NỘP BÀI)**.
+
+### 1.6. Khắc phục Góp ý Giảng viên & Nâng cấp Toàn diện Pipeline lên Chuẩn v2.4 (19/11/2026)
+- **Khắc phục góp ý mở rộng Bounding Box chữ Nôm** (`src/step4_ppocr_formatter.py`, `src/step2_kimhannom_api.py`, `config.yaml`):
+  - Cài đặt thuật toán `expand_sinonom_boxes` mở rộng tự động `pad_x=+6px` mỗi bên trái/phải và `pad_y=+8px` đầu/cuối cột kèm bảo vệ chống chồng lấn giữa các cột dọc liền kề (`min_col_gap=2px`).
+  - Xuất ảnh đối chiếu trực quan trước/sau (`submission/preview/preview_ch_440_before_after.jpg` & `preview_ch_439_before_after.jpg`) xác nhận 100% nét chữ Nôm được bao trọn, không cắt nét.
+- **Nâng cấp đồng bộ toàn bộ mã nguồn theo Quy định đồ án v2.4 (16/11/2026)**:
+  - `src/step1_pdf_extractor.py`: Bổ sung `generate_book_image_map` (đã xuất `<Tên sách>_image_map.json` cho cả 4 tập = **648 cặp trang**) và `build_updated_pdf_if_needed`.
+  - `src/step3_vietnamese_ocr.py`: Cài đặt bộ tách dòng mực đậm (`Foreground Ink Projection` loại bỏ vết in xuyên trang) kết hợp VLM OCR (`gemini-2.5-flash` / OpenAI-compatible) và cache JSON theo trang.
+  - `src/step5_dictionary_loader.py`: Bổ sung cache nhị phân `cache/dict_index.pkl` giúp giảm thời gian nạp 6 nguồn từ điển từ ~15s xuống `< 0.2s`.
+  - `src/step6_text_cleaner_aligner.py` & `src/step7_exporter_evaluator.py`: Cài đặt thuật toán dóng hàng **Levenshtein có trọng số từ điển**, xóa Variation Selectors (`U+FE00..FE0F`, `U+E0100..E01EF`), xuất 5 cột v2.4 (`img_id, sentence_id, ch_txt, vi_txt, text_diff`) và tô màu `.xlsx` khớp 100% `text_diff` bằng mã màu chuẩn Excel.
+  - `src/step8_packager.py`: Cài đặt bộ kiểm tra tự động bắt buộc `validate_book_v24` (`python main.py --step validate`) — đã chạy kiểm chứng gói mẫu v2.4 đạt **`PASS (0 lỗi)`**, độ tương đồng **`97.18%`**.
 
 ---
 
