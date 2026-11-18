@@ -220,6 +220,10 @@ kimhannom_api:
     reading_direction: 1 # 1: Dọc (mặc định) | 2: Ngang
     epitaph: 0           # 0: Văn bản thông thường | 1: Văn bia
     tag: null
+  bbox_padding:
+    sinonom_pad_x: 6     # Mở rộng mỗi bên trái/phải +6px để bao trọn nét chữ Nôm (theo góp ý giảng viên)
+    sinonom_pad_y: 8     # Mở rộng đầu/cuối cột +8px để không cắt nét đầu và cuối cột
+    min_col_gap: 2       # Khoảng hở tối thiểu giữa 2 cột dọc liền kề (chống chồng lấn)
 
 dictionaries:
   # Các nguồn ưu tiên tra cứu âm đọc Hán Nôm - Quốc ngữ

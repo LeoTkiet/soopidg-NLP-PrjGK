@@ -22,7 +22,11 @@ import requests
 from PIL import Image
 
 from src.config import DEFAULT_USER_AGENT, PROJECT_ROOT
-from src.step4_ppocr_formatter import sort_boxes_sinonom_vertical, write_ppocr_files
+from src.step4_ppocr_formatter import (
+    expand_sinonom_boxes,
+    sort_boxes_sinonom_vertical,
+    write_ppocr_files,
+)
 from src.step6_text_cleaner_aligner import normalize_pua_chars
 
 
@@ -341,17 +345,35 @@ def convert_api_result_to_ppocr_boxes(
     api_data: Dict[str, Any],
     img_width: int = 800,
     img_height: int = 1135,
+    pad_x: int = 6,
+    pad_y: int = 8,
+    min_col_gap: int = 2,
 ) -> List[Dict[str, Any]]:
     """
-    Chuyển kết quả trả về của API image-ocr ({result_ocr_text, result_bbox})
-    sang danh sách bounding box chuẩn PPOCRLabel, lọc bỏ tiêu đề lề/số trang
-    và sắp xếp theo cột dọc từ phải sang trái.
+    Chuyển kết quả trả về của API image-ocr ({result_ocr_text, result_bbox, details})
+    sang danh sách bounding box chuẩn PPOCRLabel, lọc bỏ tiêu đề lề/số trang,
+    mở rộng khung an toàn (tránh cắt nét chữ Nôm) và sắp xếp theo cột dọc từ phải sang trái.
     """
     raw_texts = api_data.get("result_ocr_text") or []
     raw_bboxes = api_data.get("result_bbox") or []
+    details_list = []
+    if isinstance(api_data.get("details"), dict):
+        details_list = api_data["details"].get("details") or []
 
     boxes: List[Dict[str, Any]] = []
-    if raw_bboxes:
+    if details_list:
+        for item in details_list:
+            pts = _normalize_single_polygon(item)
+            if pts is None:
+                continue
+            clean_txt = normalize_pua_chars(str(item.get("transcription") or "").strip())
+            if not clean_txt or _is_margin_header_or_pagenum(pts, clean_txt, img_width, img_height):
+                continue
+            box_obj: Dict[str, Any] = {"transcription": clean_txt, "points": pts}
+            if "difficult" in item:
+                box_obj["difficult"] = bool(item["difficult"])
+            boxes.append(box_obj)
+    elif raw_bboxes:
         for idx, b in enumerate(raw_bboxes):
             pts = _normalize_single_polygon(b)
             if pts is None:
@@ -379,7 +401,7 @@ def convert_api_result_to_ppocr_boxes(
     # Nếu API chỉ trả về result_ocr_text mà result_bbox rỗng ([]),
     # khởi tạo các cột dọc tạm từ phải sang trái để mở và tinh chỉnh trên PPOCRLabel
     if not boxes and raw_texts:
-        non_empty = [str(t).strip() for t in raw_texts if str(t).strip()]
+        non_empty = [normalize_pua_chars(str(t).strip()) for t in raw_texts if str(t).strip()]
         n_cols = len(non_empty)
         margin_x = int(img_width * 0.12)
         margin_top = int(img_height * 0.10)
@@ -399,7 +421,17 @@ def convert_api_result_to_ppocr_boxes(
             ]
             boxes.append({"transcription": clean_txt, "points": pts})
 
-    return sort_boxes_sinonom_vertical(boxes)
+    sorted_boxes = sort_boxes_sinonom_vertical(boxes)
+    if pad_x > 0 or pad_y > 0:
+        return expand_sinonom_boxes(
+            sorted_boxes,
+            img_width=img_width,
+            img_height=img_height,
+            pad_x=pad_x,
+            pad_y=pad_y,
+            min_col_gap=min_col_gap,
+        )
+    return sorted_boxes
 
 
 def ocr_single_nom_image_with_cache(
@@ -407,6 +439,7 @@ def ocr_single_nom_image_with_cache(
     image_path: Path,
     book_cache_dir: Path,
     ocr_params: Dict[str, Any],
+    bbox_padding: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """
     Chạy OCR cho 1 ảnh chữ Hán Nôm qua API Kim Hán Nôm (bỏ qua bước structure-classification
@@ -436,7 +469,15 @@ def ocr_single_nom_image_with_cache(
 
     with Image.open(image_path) as im:
         w, h = im.size
-    boxes = convert_api_result_to_ppocr_boxes(api_data, img_width=w, img_height=h)
+    pad_cfg = bbox_padding or {}
+    boxes = convert_api_result_to_ppocr_boxes(
+        api_data,
+        img_width=w,
+        img_height=h,
+        pad_x=int(pad_cfg.get("sinonom_pad_x", 6)),
+        pad_y=int(pad_cfg.get("sinonom_pad_y", 8)),
+        min_col_gap=int(pad_cfg.get("min_col_gap", 2)),
+    )
 
     record = {
         "image_name": image_path.name,
@@ -457,12 +498,18 @@ def ocr_single_nom_image_with_cache(
 def export_cached_nom_to_ppocr(
     ch_dir: Path,
     book_cache_dir: Path,
+    bbox_padding: Optional[Dict[str, int]] = None,
 ) -> int:
     """
     Tổng hợp toàn bộ kết quả JSON đã có trong cache của 1 cuốn sách
     để xuất ra ch/Label.txt và ch/fileState.txt theo chuẩn PPOCRLabel.
     Trả về số trang đã xuất nhãn.
     """
+    pad_cfg = bbox_padding or {}
+    pad_x = int(pad_cfg.get("sinonom_pad_x", 6))
+    pad_y = int(pad_cfg.get("sinonom_pad_y", 8))
+    min_col_gap = int(pad_cfg.get("min_col_gap", 2))
+
     annotations: Dict[str, List[Dict[str, Any]]] = {}
     for img_path in sorted(ch_dir.glob("*.jpg")):
         cache_file = book_cache_dir / f"{img_path.stem}.json"
@@ -472,8 +519,15 @@ def export_cached_nom_to_ppocr(
             data = json.loads(cache_file.read_text(encoding="utf-8"))
             w = int(data.get("width", 800))
             h = int(data.get("height", 1135))
-            if data.get("result_bbox") or data.get("result_ocr_text"):
-                boxes = convert_api_result_to_ppocr_boxes(data, img_width=w, img_height=h)
+            if data.get("result_bbox") or data.get("result_ocr_text") or data.get("details"):
+                boxes = convert_api_result_to_ppocr_boxes(
+                    data,
+                    img_width=w,
+                    img_height=h,
+                    pad_x=pad_x,
+                    pad_y=pad_y,
+                    min_col_gap=min_col_gap,
+                )
                 data["boxes"] = boxes
                 cache_file.write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -504,6 +558,7 @@ def run_ocr_nom_pipeline(
     api_cfg = cfg.get("kimhannom_api", {})
     rate_cfg = api_cfg.get("rate_limits", {})
     default_params = api_cfg.get("default_params", {})
+    bbox_padding = api_cfg.get("bbox_padding", {})
 
     token = cfg.get("auth", {}).get("bearer_token", "").strip()
     if not token or token.startswith("<"):
@@ -574,6 +629,7 @@ def run_ocr_nom_pipeline(
                     image_path=img_path,
                     book_cache_dir=book_cache_dir,
                     ocr_params=default_params,
+                    bbox_padding=bbox_padding,
                 )
                 new_api_pages += 1
                 n_boxes = len(rec.get("boxes", []))
@@ -587,6 +643,8 @@ def run_ocr_nom_pipeline(
                 stop_api_calls = True
                 break
 
-        exported = export_cached_nom_to_ppocr(ch_dir, book_cache_dir)
+        exported = export_cached_nom_to_ppocr(
+            ch_dir, book_cache_dir, bbox_padding=bbox_padding
+        )
         if exported > 0:
             print(f"   Đã cập nhật ch/Label.txt & ch/fileState.txt ({exported}/{len(ch_images)} trang).")
