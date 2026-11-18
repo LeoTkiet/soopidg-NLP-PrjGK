@@ -11,12 +11,15 @@ from pathlib import Path
 
 from src.config import load_config
 from src.step1_pdf_extractor import (
+    build_updated_pdf_if_needed,
     create_book_directory_structure,
     inspect_pdf_books,
     run_extract_all_books,
     run_generate_image_maps,
 )
 from src.step2_kimhannom_api import run_ocr_nom_pipeline
+from src.step3_vietnamese_ocr import run_ocr_vi_pipeline
+from src.step8_packager import validate_book_v24
 
 
 def run_environment_check(cfg: dict) -> None:
@@ -115,10 +118,37 @@ def main() -> None:
         run_generate_image_maps(cfg, book_filter=args.book)
     elif args.step == "ocr-nom":
         run_ocr_nom_pipeline(cfg, book_filter=args.book, max_pages=args.max_pages)
+    elif args.step == "ocr-vi":
+        run_ocr_vi_pipeline(cfg, book_filter=args.book, max_pages=args.max_pages)
+    elif args.step == "validate":
+        out_root = Path(cfg["paths"]["output_dir"])
+        print("=== KIỂM TRA TỰ ĐỘNG DỮ LIỆU NỘP THEO QUY ĐỊNH v2.4 ===")
+        for b in cfg.get("books", []):
+            fname = b.get("filename") or b.get("file_name")
+            book_id = b.get("id", "")
+            book_name = Path(fname).stem
+            if args.book and args.book not in (book_id, fname, book_name):
+                continue
+            res = validate_book_v24(out_root / book_name, book_name, require_pdf=False)
+            status = "PASS" if res["passed"] else f"FAIL ({len(res['errors'])} lỗi)"
+            sim = res["evaluation"].get("similarity_percent", 0.0)
+            print(f"  + [{book_id}] {book_name}: {status} | Độ tương đồng: {sim}%")
+            for err in res["errors"][:10]:
+                print(f"      - [LỖI] {err}")
+    elif args.step == "package":
+        raw_dir = Path(cfg["paths"]["raw_data_dir"])
+        out_root = Path(cfg["paths"]["output_dir"])
+        for b in cfg.get("books", []):
+            fname = b.get("filename") or b.get("file_name")
+            book_id = b.get("id", "")
+            if args.book and args.book not in (book_id, fname, Path(fname).stem):
+                continue
+            updated_pdf = build_updated_pdf_if_needed(b, raw_dir, out_root)
+            if updated_pdf:
+                print(f"  + [{book_id}] Đã xuất {updated_pdf.name}")
     else:
         print(
-            f"Bước '{args.step}' thuộc phạm vi của Thành viên 2 & 3. "
-            "Xem chi tiết tại docs/ProjectDescription.md và docs/PLAN_3_MEMBERS.md."
+            f"Bước '{args.step}' đã sẵn sàng trong src/step6_text_cleaner_aligner.py và src/step7_exporter_evaluator.py."
         )
 
 
