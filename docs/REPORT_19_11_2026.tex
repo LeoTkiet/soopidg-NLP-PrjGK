@@ -1,0 +1,201 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont[Scale=0.88]{Consolas}
+
+\usepackage{amsmath}
+\usepackage[margin=2.2cm, headheight=15pt]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{float}
+
+\definecolor{primaryblue}{HTML}{1A56DB}
+\definecolor{successgreen}{HTML}{0F9D58}
+\definecolor{darkred}{HTML}{D93025}
+\definecolor{mutedgray}{HTML}{4B5563}
+\definecolor{softbg}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryblue,
+    urlcolor=primaryblue,
+    pdftitle={Báo cáo tiến độ đồ án Hán Nôm - Quốc ngữ (19/11/2026)},
+    pdfauthor={Nhóm 24120356-24120386-24120399}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{mutedgray} Đồ án Xây dựng Dữ liệu Song song Hán Nôm -- Quốc ngữ}
+\rhead{\small\color{mutedgray} Nhóm \texttt{24120356\_24120386\_24120399}}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{primaryblue}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries\color{black}}{\thesubsection.}{0.5em}{}
+
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+% ==================== TRANG TIÊU ĐỀ / HEADER ====================
+\begin{center}
+    {\small\textsc{Trường Đại học Khoa học Tự nhiên -- ĐHQG TP.HCM}}\\[0.3em]
+    {\LARGE\bfseries\color{primaryblue} BÁO CÁO TIẾN ĐỘ ĐỒ ÁN \& CẬP NHẬT THEO GÓP Ý}\\[0.4em]
+    {\large\textbf{Đề tài: Xây dựng Dữ liệu Song song Hán Nôm và Quốc ngữ}}\\[0.3em]
+    {\normalsize\color{mutedgray} Đợt kiểm tra tiến độ ngày 19/11/2026 \quad|\quad Tuân thủ Quy định đồ án \texttt{v2.4} (16/11/2026)}
+\end{center}
+
+\vspace{0.5em}
+\hrule
+\vspace{0.8em}
+
+\noindent\textbf{Thông tin nhóm thực hiện:}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.2em]
+    \item \textbf{Mã nhóm:} \texttt{24120356\_24120386\_24120399} (3 thành viên; Trưởng nhóm kỹ thuật: Huỳnh Tuấn Kiệt -- \texttt{24120386})
+    \item \textbf{Thời gian thực hiện:} 01/11/2026 -- 29/11/2026 (Ngày báo cáo: \textbf{19/11/2026} -- còn 10 ngày đến hạn nộp cuối)
+    \item \textbf{Tài liệu được giao (4 tập sách phân loại \texttt{T1}, tổng 1.431 trang PDF):}
+    \begin{enumerate}[leftmargin=1.5em, itemsep=0.15em]
+        \item \texttt{T1\_Thánh Mẫu Phương Danh (Tập 1).pdf} (455 trang: 212 \texttt{vi}, 213 \texttt{ch})
+        \item \texttt{T1\_Thánh Mẫu Phương Danh (Tập 2).pdf} (311 trang: 145 \texttt{vi}, 145 \texttt{ch})
+        \item \texttt{T1\_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 1).pdf} (388 trang: 163 \texttt{vi}, 163 \texttt{ch} sau lọc 42 trang quét đúp)
+        \item \texttt{T1\_Đức Chúa Giêsu Ngự Trong Phép Mình Thánh (Tập 2).pdf} (277 trang: 128 \texttt{vi}, 128 \texttt{ch} sau lọc 4 trang quét đúp)
+    \end{enumerate}
+\end{itemize}
+
+% ==================== PHẦN 1 ====================
+\section{Tổng quan quy trình thực hiện của nhóm (End-to-End Pipeline)}
+
+Nhóm xây dựng hệ thống tự động hóa hoàn toàn bằng \textbf{Python 3} gồm 8 bước khép kín, có cơ chế lưu cache JSON/nhị phân, kiểm soát hạn mức API (rate-limit) và kiểm tra tự động bắt buộc ở cuối quy trình theo đúng \textbf{Quy định đồ án v2.4 (16/11/2026)}.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{2.4cm} >{\raggedright\arraybackslash}p{3.8cm} >{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}p{2.7cm} >{\raggedright\arraybackslash}p{3.0cm}}
+\toprule
+\textbf{Bước} & \textbf{Nội dung công việc} & \textbf{Mô hình / Thuật toán} & \textbf{Công cụ / Thư viện} & \textbf{Kiểm tra \& Sửa thủ công} \\
+\midrule
+\endhead
+\textbf{1 \& 2. Khảo sát \& Kiểm tra PDF} & Kiểm tra chất lượng scan, phát hiện trang xoay, trang quét đúp; lập bảng ánh xạ trang \texttt{ch} $\leftrightarrow$ \texttt{vi} cho sách loại \texttt{T1}. & Phân tích metadata, cờ \texttt{/Rotate} và từ điển \texttt{/XObject} của PDF; đối chiếu số trang in thực tế. & \texttt{PyMuPDF} (\texttt{fitz}), \texttt{Pillow}, \texttt{config.yaml}. & \textbf{Có:} Kiểm tra mắt các điểm đầu/cuối từng tập để xác nhận 29 trang xoay (\texttt{book\_1}), 46 trang quét đúp (\texttt{book\_3}, \texttt{book\_4}) và trang rách (\texttt{book\_2}). \\
+\midrule
+\textbf{3. Chiết xuất ảnh \& \texttt{image\_map}} & Tách 1.431 trang PDF ra file \texttt{.jpg} giữ độ phân giải gốc (\texttt{800x1135}), tự xoay chuẩn chiều, phân loại thư mục và sinh \texttt{\_image\_map.json}. & Giải mã trực tiếp luồng ảnh JPEG gốc (\texttt{DCTDecode}) tránh re-encode giảm nét; tự xoay theo \texttt{/Rotate}. & \texttt{step1\_pdf\_extractor.py}, \texttt{PyMuPDF}, \texttt{Pillow}. & \textbf{Có:} Đối chiếu thủ công các trang bìa/mục lục đầu sách (\texttt{013.jpg} $\leftrightarrow$ \texttt{[446, 445]}) và kiểm tra ảnh sau xoay. \\
+\midrule
+\textbf{4A. OCR chữ Hán Nôm (\texttt{ch/})} & Nhận dạng chữ Nôm viết dọc từ phải sang trái, lưu cache JSON ngay từng trang để bảo toàn quota. & \textbf{API Kim Hán Nôm} (\texttt{image-upload} $\to$ \texttt{image-ocr} với \texttt{ocr\_id=1, lang\_type=2}; bỏ qua \texttt{structure-classification} tiết kiệm 33\% quota). & \texttt{step2\_kimhannom\_api.py}, \texttt{requests}, tự làm mới JWT, bộ đếm rate-limit cứng. & \textbf{Có:} Rà soát chữ nhận nhầm trên mộc bản và kiểm định trực quan trên \texttt{PPOCRLabel}. \\
+\midrule
+\textbf{4B. OCR chữ Quốc ngữ (\texttt{vi/})} & Phát hiện tọa độ từng dòng ngang và nhận dạng chữ Quốc ngữ giữ nguyên từ cổ, dấu gạch ngang. & \textbf{Foreground Ink Projection} (ngưỡng \texttt{arr < 125} tách mực in mặt trước khỏi bóng xuyên trang) + \textbf{VLM OCR} (\texttt{gemini-2.5-flash} / OpenAI Vision). & \texttt{step3\_vietnamese\_ocr.py}, \texttt{NumPy}, \texttt{OpenCV}, \texttt{google-genai}. & \textbf{Có:} Kiểm tra khung dòng tiêu đề/dấu thanh, kiểm tra chính tả tuyệt đối theo bản in gốc (không sửa từ cổ). \\
+\midrule
+\textbf{5. Chuẩn hóa BBox \& Làm sạch} & Bỏ số trang, tiêu đề gáy sách/chân trang, chú thích \texttt{[1]}/\texttt{(1)}; chuẩn hóa NFC, ánh xạ PUA, xóa Variation Selectors; mở rộng box Nôm. & Lọc hình học vùng lề, gom cụm cột dọc phải $\to$ trái, mở rộng box chống chồng lấn (\texttt{expand\_sinonom\_boxes}), bảng \texttt{PUA\_NORMALIZATION\_MAP}. & \texttt{step4\_ppocr\_formatter.py}, \texttt{step6}, công cụ \texttt{PPOCRLabel}. & \textbf{Có:} Mở trực tiếp thư mục \texttt{ch/}, \texttt{vi/} trên \texttt{PPOCRLabel} để kiểm định box và chụp ảnh phụ lục báo cáo. \\
+\midrule
+\textbf{6. Từ điển \& Dóng hàng} & Nối câu vắt qua trang, tách câu, dóng hàng 1--1 Nôm -- Quốc ngữ và sinh cột \texttt{text\_diff} chuẩn JSON v2.4. & \textbf{Thuật toán Levenshtein có trọng số từ điển} (khớp=0.0, thay thế=1.0, chèn/xóa=1.2) + chỉ mục 6 nguồn từ điển cache \texttt{.pkl} ($<0.2$s). & \texttt{step5\_dictionary\_loader.py}, \texttt{step6\_text\_cleaner\_aligner.py}. & \textbf{Có:} Rà soát thủ công câu ngắn ($<5$ chữ), ranh giới câu chuyển trang và tên riêng phiên âm nước ngoài. \\
+\midrule
+\textbf{7. Xuất \texttt{.csv}/\texttt{.xlsx} \& Đánh giá} & Xuất 5 cột v2.4 (\texttt{img\_id, sentence\_id, ch\_txt, vi\_txt, text\_diff}), tô màu RichText khớp \texttt{pos}, tính điểm $\ge 95\%$. & Dựng \texttt{CellRichText} trên chuỗi NFC gốc (màu đen \texttt{000000}, đỏ \texttt{FF0000}, vàng \texttt{D99A00}), chấm điểm theo công thức v2.4. & \texttt{step7\_exporter\_evaluator.py}, \texttt{openpyxl}, \texttt{csv} (\texttt{utf-8-sig}). & \textbf{Có:} Lọc danh sách chữ đỏ đối chiếu mộc bản \& từ điển trực tuyến; sửa đồng bộ 3 nơi (\texttt{Label.txt}, \texttt{.csv}, \texttt{text\_diff}/\texttt{.xlsx}). \\
+\midrule
+\textbf{8. Kiểm tra tự động \& Đóng gói} & Kiểm chứng toàn bộ ràng buộc v2.4 trước khi nén nộp. & Bộ kiểm tra \texttt{validate\_book\_v24} đối chiếu chéo \texttt{Label.txt}, \texttt{.csv}, \texttt{text\_diff}, mã màu \texttt{.xlsx} và \texttt{\_image\_map.json}. & \texttt{step8\_packager.py}, \texttt{main.py --step validate}. & \textbf{Có:} Mở kiểm tra \texttt{.csv} và \texttt{.xlsx} trên Excel / Google Sheets xác nhận không lỗi font, không lệch cột. \\
+\bottomrule
+\end{longtable}
+
+% ==================== PHẦN 2 ====================
+\section{Báo cáo cập nhật theo góp ý của giảng viên \& chuẩn v2.4}
+
+\subsection{Khắc phục góp ý mở rộng Bounding Box chữ Nôm}
+\textbf{Góp ý của giảng viên ở đợt kiểm tra trước:}
+\begin{quote}
+\itshape ``Anh có xem qua báo cáo tiến độ của nhóm và thấy nhóm làm tốt. Nhưng box cho Nôm các nhóm nên tăng kích thước thêm để bao trọn các chữ Nôm, hạn chế các nét chữ Nôm bị cắt mất nhé.''
+\end{quote}
+
+\textbf{Nguyên nhân:} Tọa độ đa giác 4 đỉnh thô trả về từ API Kim Hán Nôm ôm quá sát tâm chữ (bề rộng cột trung bình chỉ $38$--$41\text{ px}$), dẫn đến các nét phẩy/mác vươn ngang ở hai bên cột và nét ở đầu/cuối cột dễ bị đè sát hoặc cắt nhẹ bởi mép khung.
+
+\textbf{Giải pháp kỹ thuật đã triển khai (commit \texttt{c08cd05}):}
+\begin{itemize}[leftmargin=1.5em, itemsep=0.25em]
+    \item Cài đặt hàm \texttt{expand\_sinonom\_boxes} trong \texttt{src/step4\_ppocr\_formatter.py} và tích hợp tự động vào \texttt{src/step2\_kimhannom\_api.py}:
+    \begin{itemize}[leftmargin=1.5em]
+        \item Chuẩn hóa thứ tự 4 đỉnh đa giác về đúng \texttt{[TL, TR, BR, BL]} nhằm giữ nguyên độ nghiêng tự nhiên của cột chữ mộc bản.
+        \item Mở rộng thêm \textbf{\texttt{+6 px} mỗi bên trái/phải} (tổng bề rộng cột tăng từ $\approx 39\text{ px}$ lên $\approx 51\text{ px}$) và \textbf{\texttt{+8 px} ở cả đầu và cuối cột} (tổng chiều cao tăng $+16\text{ px}$), kẹp an toàn trong biên ảnh $[0, 799] \times [0, 1134]$.
+        \item \textbf{Cơ chế chống chồng lấn ngang (Collision-Safe Guard):} tự động kiểm tra mọi cặp cột liền kề có khoảng tung độ $Y$ giao nhau; nếu biên mở rộng chạm nhau thì tự căn đều tại trung điểm để luôn giữ khoảng hở tối thiểu \texttt{min\_col\_gap = 2 px}.
+    \end{itemize}
+    \item Tham số hóa đầy đủ tại mục \texttt{kimhannom\_api.bbox\_padding} trong \texttt{config.yaml} để linh hoạt điều chỉnh cho các trang có mật độ cột dày.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[b]{0.46\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../submission/preview/preview_ch_440_before_after.jpg}
+        \vspace{0.2em}
+        {\small (a) Trang \texttt{440.jpg}: Khung cũ (đỏ mảnh) vs. Mới (xanh đậm)}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[b]{0.46\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../submission/preview/preview_ch_439_before_after.jpg}
+        \vspace{0.2em}
+        {\small (b) Trang \texttt{439.jpg}: Khung cũ (đỏ mảnh) vs. Mới (xanh đậm)}
+    \end{minipage}
+    \caption{Đối chiếu trực quan bounding box chữ Nôm trước và sau khi mở rộng (\texttt{pad\_x=+6px, pad\_y=+8px}). Toàn bộ nét chữ Nôm được bao trọn 100\%, không cắt nét và không chồng lấn cột.}
+\end{figure}
+
+\subsection{Nâng cấp đồng bộ toàn bộ mã nguồn lên chuẩn v2.4 (16/11/2026)}
+Song song với việc sửa box Nôm, nhóm đã nâng cấp toàn bộ pipeline theo phiên bản \texttt{Quy\_định\_đồ\_án\_v2.4.pdf}:
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.2em]
+    \item Sinh tự động file ánh xạ \texttt{<Tên sách>\_image\_map.json} cho cả 4 tập sách (tổng \textbf{648 cặp trang đối ứng}: \texttt{book\_1}: 212, \texttt{book\_2}: 145, \texttt{book\_3}: 163, \texttt{book\_4}: 128).
+    \item Chuyển đổi cấu trúc file dóng hàng sang 5 cột chuẩn v2.4 (\texttt{img\_id, sentence\_id, ch\_txt, vi\_txt, text\_diff}), tự động tính \texttt{text\_diff} bằng thuật toán Levenshtein theo đúng chỉ số Unicode code-point (NFC) và xóa bỏ Variation Selectors.
+    \item Xuất file \texttt{.xlsx} tô màu trực tiếp trên chuỗi NFC gốc, khớp tuyệt đối 100\% với cột \texttt{text\_diff} theo mã màu chuẩn Excel (\texttt{000000}, \texttt{FF0000}, \texttt{D99A00}).
+    \item Kiểm chứng gói mẫu v2.4 (\texttt{submission/24120356\_24120386\_24120399\_sample.zip}) qua bộ kiểm tra tự động bắt buộc \texttt{validate\_book\_v24}: đạt \textbf{\color{successgreen}PASS (0 lỗi)}, độ tương đồng \textbf{97.18\%} ($241/248$ chữ đen, $7$ chữ đỏ đều là tên phiên âm nước ngoài, $0$ chữ vàng, $0$ hàng \texttt{null}).
+\end{enumerate}
+
+% ==================== PHẦN 3 ====================
+\section{Đánh giá tiến độ hiện tại (01/11 \texorpdfstring{$\to$}{-} 19/11/2026)}
+
+Tính đến ngày 19/11/2026 (đã qua 18/28 ngày -- 64\% quỹ thời gian), tiến độ chi tiết của từng hạng mục như sau:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{6.2cm} c >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Hạng mục công việc} & \textbf{Hoàn thành} & \textbf{Trạng thái chi tiết} \\
+\midrule
+Khảo sát PDF, phát hiện trang lỗi/xoay/quét đúp \& ánh xạ trang (4 tập) & \textbf{100\%} & Hoàn tất 1.431 trang trong \texttt{config.yaml} và 4 file \texttt{\_image\_map.json}. \\
+Chiết xuất \& phân loại 1.431 ảnh \texttt{.jpg} độ phân giải gốc & \textbf{100\%} & Đầy đủ trong \texttt{output/<Tên sách>/<ch,vi,intro,toc,blank,misc>/}. \\
+Hoàn thiện mã nguồn Pipeline 8 bước chuẩn v2.4 + Validator & \textbf{100\%} & Các module \texttt{step1} $\to$ \texttt{step8} và \texttt{main.py} đã sẵn sàng, test \texttt{PASS 0 lỗi}. \\
+Khắc phục góp ý mở rộng BBox Nôm \& cập nhật gói mẫu v2.4 & \textbf{100\%} & Đạt 97.18\% độ tương đồng, đã có ảnh minh họa Trước/Sau. \\
+Chạy OCR hàng loạt cho toàn bộ 649 trang \texttt{ch/} và 648 trang \texttt{vi/} & \textbf{$\sim$5\%} & Đã kiểm thử và hiệu đính chuẩn trên các trang mẫu; chạy batch toàn lực từ 20/11. \\
+Dóng hàng, hậu kiểm chữ đỏ ($\ge 95\%$) \& đóng gói báo cáo cuối kỳ & \textbf{10\%} & Đã hoàn chỉnh công cụ và mẫu; chạy sản xuất ngay sau bước OCR. \\
+\bottomrule
+\end{tabularx}
+\caption{Bảng tổng hợp tiến độ thực hiện tính đến ngày 19/11/2026.}
+\end{table}
+
+% ==================== PHẦN 4 ====================
+\section{Kế hoạch chạy nước rút 10 ngày cuối (20/11 \texorpdfstring{$\to$}{-} 29/11/2026)}
+
+Để hoàn thành trọn vẹn 4 tập sách (649 trang \texttt{ch/} + 648 trang \texttt{vi/}) đạt $\ge 95\%$ đúng hạn \textbf{29/11/2026}, nhóm phân chia chạy song song trên cả 3 tài khoản thành viên (tổng hạn mức Kim Hán Nôm: $3 \times 200 = 600\text{ request/ngày} = 300\text{ trang/ngày}$):
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.9cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{4.6cm}}
+\toprule
+\textbf{Thời gian} & \textbf{Mục tiêu \& Đầu việc cụ thể} & \textbf{Phân công} \\
+\midrule
+\textbf{20/11 -- 22/11} (3 ngày) & \textbf{Hoàn tất 100\% OCR Nôm (649 trang) \& OCR Quốc ngữ (648 trang):} Chia đều $\sim 216$ trang Nôm/thành viên qua API Kim Hán Nôm ($\approx 432$ req/tài khoản, nằm gọn trong giới hạn 600 req/tuần) và chạy song song \texttt{--step ocr-vi}. & TV1: \texttt{book\_1} (213 \texttt{ch} + 212 \texttt{vi}) \newline TV2: \texttt{book\_3} + \texttt{book\_4} (\texttt{ch}) \newline TV3: \texttt{book\_2} + \texttt{book\_4} (\texttt{vi}) \\
+\midrule
+\textbf{23/11 -- 24/11} (2 ngày) & \textbf{Làm sạch \texttt{Label.txt} \& Hậu kiểm trên \texttt{PPOCRLabel}:} Chạy tự động mở rộng box Nôm, lọc header/footer, chuẩn hóa PUA \& xóa Variation Selectors; kiểm tra trực quan và chụp ảnh phụ lục. & Cả 3 thành viên chia theo từng tập sách phụ trách \\
+\midrule
+\textbf{25/11 -- 26/11} (2 ngày) & \textbf{Dóng hàng Levenshtein \& Xuất \texttt{.csv}/\texttt{.xlsx} v2.4:} Chạy dóng hàng theo \texttt{\_image\_map.json}, xuất danh sách chữ đỏ (\texttt{error}) và câu ngắn cần kiểm tra. & TV3 chạy tổng hợp; TV1 \& TV2 đối chiếu bản gốc \\
+\midrule
+\textbf{27/11 -- 28/11} (2 ngày) & \textbf{Hậu kiểm chữ đỏ ($\ge 95\%$) \& Chạy Validator v2.4:} Sửa lỗi OCR đồng bộ 3 nơi (\texttt{Label.txt}, \texttt{.csv}, \texttt{text\_diff}/\texttt{.xlsx}), chạy \texttt{--step validate} đạt 0 lỗi trên cả 4 tập, xuất \texttt{\_updated.pdf} và \texttt{source.zip}. & Cả 3 thành viên rà soát chéo \\
+\midrule
+\textbf{29/11} (Hạn nộp) & \textbf{Hoàn thiện \texttt{24120356\_24120386\_24120399\_report.pdf} \& Nộp bài:} Điền đủ thống kê v2.4 (tỷ lệ chữ vàng, hàng \texttt{null}, ảnh chụp \texttt{PPOCRLabel}/Excel), nén ZIP và kiểm tra giải nén trước khi nộp. & TV1 (Trưởng nhóm) tổng hợp \& nộp bài \\
+\bottomrule
+\end{tabularx}
+\caption{Lộ trình hoàn thiện và nghiệm thu giai đoạn nước rút (20/11 -- 29/11/2026).}
+\end{table}
+
+\end{document}
+
