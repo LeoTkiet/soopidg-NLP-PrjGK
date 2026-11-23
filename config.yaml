@@ -3,11 +3,11 @@ project:
   min_similarity_threshold: 95.0
 
 paths:
-  raw_data_dir: "D:/soopidg-NLP-PrjGK/Data"
-  dictionary_entries_dir: "D:/soopidg-NLP-PrjGK/Data/dictionaries-04-11-2026/entries"
-  cache_dir: "D:/soopidg-NLP-PrjGK/cache"
-  output_dir: "D:/soopidg-NLP-PrjGK/output"
-  submission_dir: "D:/soopidg-NLP-PrjGK/submission"
+  raw_data_dir: "Data"
+  dictionary_entries_dir: "Data/dictionaries-04-11-2026/entries"
+  cache_dir: "cache"
+  output_dir: "output"
+  submission_dir: "submission"
 
 books:
   - id: "book_1"

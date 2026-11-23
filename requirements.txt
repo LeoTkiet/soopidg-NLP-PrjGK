@@ -10,4 +10,6 @@ pandas==2.2.3
 openpyxl==3.1.5
 tqdm==4.67.0
 rapidfuzz==3.10.1
+google-genai==1.68.0
+openai==2.29.0
 

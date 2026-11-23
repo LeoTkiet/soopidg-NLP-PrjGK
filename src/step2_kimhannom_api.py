@@ -543,14 +543,26 @@ def export_cached_nom_to_ppocr(
     return len(annotations)
 
 
+def _extract_page_num_from_filename(image_path: Path) -> Optional[int]:
+    """Trích xuất số trang PDF (int) từ tên file ảnh `<Tên sách>.<STT>[_<sub_idx>].jpg`."""
+    try:
+        tail = image_path.stem.rsplit(".", 1)[-1].split("_")[0]
+        return int(tail)
+    except Exception:
+        return None
+
+
 def run_ocr_nom_pipeline(
     cfg: Dict[str, Any],
     book_filter: Optional[str] = None,
     max_pages: Optional[int] = None,
+    start_page: Optional[int] = None,
+    end_page: Optional[int] = None,
 ) -> None:
     """
     Điều phối chạy OCR chữ Hán Nôm qua API Kim Hán Nôm cho các sách trong config.yaml.
     Tự động đọc cache, kiểm soát quota (25/phút, 50/giờ, 200/ngày, 600/tuần),
+    hỗ trợ lọc khoảng trang (`start_page`..`end_page`) để chia đều giữa các thành viên,
     và xuất file ch/Label.txt + ch/fileState.txt sau mỗi đợt chạy.
     """
     out_root = Path(cfg["paths"]["output_dir"])
@@ -561,24 +573,31 @@ def run_ocr_nom_pipeline(
     bbox_padding = api_cfg.get("bbox_padding", {})
 
     token = cfg.get("auth", {}).get("bearer_token", "").strip()
-    if not token or token.startswith("<"):
+    email = cfg.get("auth", {}).get("email", "").strip()
+    password = cfg.get("auth", {}).get("password", "").strip()
+    has_token = bool(token) and not token.startswith("<") and token != "PASTE_YOUR_COOKIE_TOKEN_HERE"
+    has_login = bool(email) and not email.startswith("<") and bool(password)
+
+    if not has_token and not has_login:
         print(
-            "[CẢNH BÁO] Chưa cấu hình KIMHANNOM_BEARER_TOKEN hợp lệ trong .env! "
+            "[CẢNH BÁO] Chưa cấu hình KIMHANNOM_BEARER_TOKEN hoặc KIMHANNOM_EMAIL/PASSWORD hợp lệ trong .env! "
             "Sẽ chỉ tổng hợp từ dữ liệu cache sẵn có."
         )
 
     client = KimHanNomAPIClient(
-        bearer_token=token or "missing_token",
+        bearer_token=token if has_token else "",
         base_url=cfg["auth"]["base_url"],
         user_agent=cfg["auth"]["user_agent"],
         min_delay_seconds=float(rate_cfg.get("min_delay_seconds", 3.0)),
         usage_log_path=cache_root / "api_usage_log.json",
-        email=cfg["auth"].get("email", ""),
-        password=cfg["auth"].get("password", ""),
+        email=email,
+        password=password,
     )
 
     quota = client.get_quota_status()
     print("=== CHẠY OCR HÁN NÔM QUA API KIM HÁN NÔM ===")
+    if start_page is not None or end_page is not None:
+        print(f"- Phạm vi lọc trang: {start_page or 'đầu'} -> {end_page or 'cuối'}")
     print(
         f"- Quota đã dùng: {quota['used_min']}/25 (phút) | "
         f"{quota['used_hour']}/50 (giờ) | "
@@ -587,7 +606,7 @@ def run_ocr_nom_pipeline(
     )
 
     new_api_pages = 0
-    stop_api_calls = not bool(token) or token.startswith("<")
+    stop_api_calls = not (has_token or has_login)
 
     for b in cfg.get("books", []):
         fname = b.get("filename") or b.get("file_name")
@@ -603,15 +622,25 @@ def run_ocr_nom_pipeline(
             print(f"\n[{book_id}] {book_name}: Chưa có ảnh trong {ch_dir}. Hãy chạy --step extract trước!")
             continue
 
+        target_images = []
+        for img in ch_images:
+            pnum = _extract_page_num_from_filename(img)
+            if pnum is not None:
+                if start_page is not None and pnum < start_page:
+                    continue
+                if end_page is not None and pnum > end_page:
+                    continue
+            target_images.append(img)
+
         cached_count = sum(
-            1 for img in ch_images if (book_cache_dir / f"{img.stem}.json").exists()
+            1 for img in target_images if (book_cache_dir / f"{img.stem}.json").exists()
         )
         print(
-            f"\n-> [{book_id}] {book_name}: Tổng {len(ch_images)} trang ch/ "
-            f"(Đã có cache: {cached_count}/{len(ch_images)})"
+            f"\n-> [{book_id}] {book_name}: Phạm vi {len(target_images)}/{len(ch_images)} trang ch/ "
+            f"(Đã có cache: {cached_count}/{len(target_images)})"
         )
 
-        for img_path in ch_images:
+        for img_path in target_images:
             cache_file = book_cache_dir / f"{img_path.stem}.json"
             if cache_file.exists():
                 continue

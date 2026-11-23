@@ -19,6 +19,7 @@ from src.step1_pdf_extractor import (
 )
 from src.step2_kimhannom_api import run_ocr_nom_pipeline
 from src.step3_vietnamese_ocr import run_ocr_vi_pipeline
+from src.step7_exporter_evaluator import run_align_pipeline, run_evaluate_pipeline
 from src.step8_packager import validate_book_v24
 
 
@@ -103,7 +104,24 @@ def main() -> None:
         "--max-pages",
         type=int,
         default=None,
-        help="Số trang tối đa gọi API mới trong 1 lần chạy (dùng cho --step ocr-nom)",
+        help="Số trang tối đa gọi API mới trong 1 lần chạy (dùng cho --step ocr-nom / ocr-vi)",
+    )
+    parser.add_argument(
+        "--start-page",
+        type=int,
+        default=None,
+        help="Trang PDF bắt đầu cần xử lý (dùng chia nửa sách giữa các thành viên, vd: --start-page 144)",
+    )
+    parser.add_argument(
+        "--end-page",
+        type=int,
+        default=None,
+        help="Trang PDF kết thúc cần xử lý (dùng chia nửa sách giữa các thành viên, vd: --end-page 207)",
+    )
+    parser.add_argument(
+        "--keep-diff",
+        action="store_true",
+        help="Giữ nguyên cột text_diff đang có trong .csv khi chạy --step evaluate (chỉ tô lại .xlsx & chấm điểm)",
     )
     args = parser.parse_args()
     cfg = load_config()
@@ -117,9 +135,25 @@ def main() -> None:
     elif args.step == "image-map":
         run_generate_image_maps(cfg, book_filter=args.book)
     elif args.step == "ocr-nom":
-        run_ocr_nom_pipeline(cfg, book_filter=args.book, max_pages=args.max_pages)
+        run_ocr_nom_pipeline(
+            cfg,
+            book_filter=args.book,
+            max_pages=args.max_pages,
+            start_page=args.start_page,
+            end_page=args.end_page,
+        )
     elif args.step == "ocr-vi":
-        run_ocr_vi_pipeline(cfg, book_filter=args.book, max_pages=args.max_pages)
+        run_ocr_vi_pipeline(
+            cfg,
+            book_filter=args.book,
+            max_pages=args.max_pages,
+            start_page=args.start_page,
+            end_page=args.end_page,
+        )
+    elif args.step == "align":
+        run_align_pipeline(cfg, book_filter=args.book)
+    elif args.step == "evaluate":
+        run_evaluate_pipeline(cfg, book_filter=args.book, keep_diff=args.keep_diff)
     elif args.step == "validate":
         out_root = Path(cfg["paths"]["output_dir"])
         print("=== KIỂM TRA TỰ ĐỘNG DỮ LIỆU NỘP THEO QUY ĐỊNH v2.4 ===")
@@ -146,10 +180,6 @@ def main() -> None:
             updated_pdf = build_updated_pdf_if_needed(b, raw_dir, out_root)
             if updated_pdf:
                 print(f"  + [{book_id}] Đã xuất {updated_pdf.name}")
-    else:
-        print(
-            f"Bước '{args.step}' đã sẵn sàng trong src/step6_text_cleaner_aligner.py và src/step7_exporter_evaluator.py."
-        )
 
 
 if __name__ == "__main__":

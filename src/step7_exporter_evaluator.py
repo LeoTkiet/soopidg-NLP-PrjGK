@@ -29,6 +29,7 @@ from openpyxl.styles import Alignment, Font
 from src.step5_dictionary_loader import HanNomDictionaryIndex
 from src.step6_text_cleaner_aligner import (
     AlignedSentencePair,
+    SinoNomAligner,
     compute_text_diff_levenshtein,
     tokenize_quoc_ngu_with_spans,
     tokenize_sinonom_with_spans,
@@ -272,3 +273,245 @@ def export_aligned_xlsx_and_evaluate(
 
     wb.save(str(xlsx_path))
     return evaluate_pairs_v24(pairs)
+
+
+def load_ppocr_label_file(label_path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Đọc file `Label.txt` chuẩn PPOCRLabel thành dict `{image_filename: [boxes...]}`."""
+    label_map: Dict[str, List[Dict[str, Any]]] = {}
+    if not label_path.exists():
+        return label_map
+    for line in label_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or "\t" not in line:
+            continue
+        rel_path, raw_json = line.split("\t", 1)
+        img_name = rel_path.split("/", 1)[-1]
+        try:
+            label_map[img_name] = json.loads(raw_json)
+        except Exception:
+            continue
+    return label_map
+
+
+def load_aligned_csv(csv_path: Path) -> List[AlignedSentencePair]:
+    """Đọc file `<Tên sách>.csv` chuẩn v2.4 (5 cột) thành danh sách `AlignedSentencePair`."""
+    pairs: List[AlignedSentencePair] = []
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_diff = (row.get("text_diff") or "").strip()
+            parsed_diff: Optional[List[Dict[str, Any]]]
+            if raw_diff == "null" or not raw_diff:
+                parsed_diff = None
+            else:
+                try:
+                    parsed_diff = json.loads(raw_diff)
+                except Exception:
+                    parsed_diff = []
+            pairs.append(
+                AlignedSentencePair(
+                    img_id=(row.get("img_id") or "").strip(),
+                    sentence_id=(row.get("sentence_id") or "").strip(),
+                    ch_txt=unicodedata.normalize("NFC", row.get("ch_txt") or ""),
+                    vi_txt=unicodedata.normalize("NFC", row.get("vi_txt") or ""),
+                    text_diff=parsed_diff,
+                )
+            )
+    return pairs
+
+
+def export_red_error_report(
+    pairs: List[AlignedSentencePair],
+    report_path: Path,
+) -> int:
+    """
+    Xuất danh sách toàn bộ các chữ tô màu đỏ (`type == 'error'`) ra file CSV riêng
+    (`cache/reports/<Tên sách>_red_report.csv`) để nhóm rà soát sửa lỗi OCR nhanh chóng.
+    Trả về tổng số phần tử lỗi đã ghi.
+    """
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    error_count = 0
+    with open(report_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["img_id", "sentence_id", "nom_sub_text", "vi_sub_text", "ch_txt", "vi_txt"]
+        )
+        for p in pairs:
+            if not p.text_diff:
+                continue
+            for item in p.text_diff:
+                if item.get("type") == "error":
+                    writer.writerow(
+                        [
+                            p.img_id,
+                            p.sentence_id,
+                            item.get("nom_sub_text", ""),
+                            item.get("vi_sub_text", ""),
+                            p.ch_txt,
+                            p.vi_txt,
+                        ]
+                    )
+                    error_count += 1
+    return error_count
+
+
+def _load_dictionary_from_cfg(cfg: Dict[str, Any]) -> HanNomDictionaryIndex:
+    """Nạp chỉ mục từ điển Hán Nôm từ cache `.pkl` theo cấu hình `config.yaml`."""
+    entries_dir = Path(cfg["paths"]["dictionary_entries_dir"])
+    cache_path = Path(cfg["paths"]["cache_dir"]) / "dict_index.pkl"
+    sources = (
+        cfg.get("dictionaries", {}).get("primary_sources", [])
+        + cfg.get("dictionaries", {}).get("variant_sources", [])
+    )
+    dict_index = HanNomDictionaryIndex(entries_dir=entries_dir)
+    from_cache = dict_index.load_or_build_cache(sources, cache_path=cache_path)
+    print(
+        f"- Từ điển Hán Nôm: {'nạp từ cache ' + cache_path.name if from_cache else 'đã xây dựng mới ' + cache_path.name}"
+    )
+    return dict_index
+
+
+def _print_eval_summary(book_id: str, book_name: str, report: Dict[str, Any], red_report_path: Path, n_red_items: int) -> None:
+    status = "ĐẠT (>= 95%)" if report["passed_95_threshold"] else "CHƯA ĐẠT (< 95%)"
+    print(
+        f"  + [{book_id}] {book_name}:\n"
+        f"      Câu dóng hàng : {report['total_rows']} câu (hàng null: {report['null_rows']} - {report['null_ratio_percent']}%)\n"
+        f"      Chữ tính điểm : {report['scored_nom_chars']} | Đen: {report['black_chars']} | "
+        f"Đỏ: {report['red_chars']} | Vàng: {report['warn_chars']} ({report['warn_ratio_percent']}%)\n"
+        f"      Độ tương đồng : {report['similarity_percent']}% -> {status}\n"
+        f"      Báo cáo chữ đỏ: {red_report_path} ({n_red_items} mục cần rà soát)"
+    )
+
+
+def run_align_pipeline(
+    cfg: Dict[str, Any],
+    book_filter: Optional[str] = None,
+) -> None:
+    """
+    Đọc `ch/Label.txt`, `vi/Label.txt` và `<Tên sách>_image_map.json`, chạy dóng hàng Levenshtein
+    (`SinoNomAligner`), xuất `<Tên sách>.csv`, `<Tên sách>.xlsx` (tô màu chuẩn v2.4)
+    và báo cáo danh sách chữ đỏ `cache/reports/<Tên sách>_red_report.csv`.
+    """
+    out_root = Path(cfg["paths"]["output_dir"])
+    cache_root = Path(cfg["paths"]["cache_dir"])
+    print("=== DÓNG HÀNG SONG NGỮ & XUẤT CSV/XLSX CHUẨN v2.4 (--step align) ===")
+    dict_index = _load_dictionary_from_cfg(cfg)
+    aligner = SinoNomAligner(dictionary_index=dict_index)
+
+    for b in cfg.get("books", []):
+        fname = b.get("filename") or b.get("file_name")
+        book_id = b.get("id", "")
+        book_name = Path(fname).stem
+        if book_filter and book_filter not in (book_id, fname, book_name):
+            continue
+
+        book_dir = out_root / book_name
+        ch_labels = load_ppocr_label_file(book_dir / "ch" / "Label.txt")
+        vi_labels = load_ppocr_label_file(book_dir / "vi" / "Label.txt")
+        if not ch_labels or not vi_labels:
+            print(
+                f"  [BỎ QUA] [{book_id}] {book_name}: Thiếu ch/Label.txt ({len(ch_labels)} trang) "
+                f"hoặc vi/Label.txt ({len(vi_labels)} trang)."
+            )
+            continue
+
+        map_path = book_dir / f"{book_name}_image_map.json"
+        if not map_path.exists():
+            print(
+                f"  [LỖI] [{book_id}] {book_name}: Không tìm thấy {map_path.name}. "
+                "Hãy chạy `python main.py --step image-map` trước!"
+            )
+            continue
+
+        image_map = json.loads(map_path.read_text(encoding="utf-8"))
+        page_entries: List[Tuple[str, List[str], List[str]]] = []
+        skipped_pairs = 0
+        for pr in image_map.get("pairs", []):
+            ch_list = pr.get("ch", [])
+            vi_list = pr.get("vi", [])
+            if not ch_list or not vi_list:
+                skipped_pairs += 1
+                continue
+            if all(fn in ch_labels for fn in ch_list) and all(fn in vi_labels for fn in vi_list):
+                ch_lines = [
+                    str(box.get("transcription", "")).strip()
+                    for fn in ch_list
+                    for box in ch_labels[fn]
+                    if str(box.get("transcription", "")).strip()
+                ]
+                vi_lines = [
+                    str(box.get("transcription", "")).strip()
+                    for fn in vi_list
+                    for box in vi_labels[fn]
+                    if str(box.get("transcription", "")).strip()
+                ]
+                if ch_lines and vi_lines:
+                    page_entries.append((ch_list[0], ch_lines, vi_lines))
+                else:
+                    skipped_pairs += 1
+            else:
+                skipped_pairs += 1
+
+        if not page_entries:
+            print(
+                f"  [BỎ QUA] [{book_id}] {book_name}: Chưa có cặp trang nào đủ cả ch/Label.txt và vi/Label.txt."
+            )
+            continue
+
+        if skipped_pairs > 0:
+            print(
+                f"  [Lưu ý] [{book_id}] Đang dóng hàng {len(page_entries)} cặp trang đã có OCR "
+                f"(bỏ qua {skipped_pairs} cặp chưa OCR đủ 2 vế)."
+            )
+
+        pairs = aligner.align_page_sequence(page_entries)
+        csv_path = book_dir / f"{book_name}.csv"
+        xlsx_path = book_dir / f"{book_name}.xlsx"
+        export_aligned_csv(pairs, csv_path, is_pure_text=False)
+        report = export_aligned_xlsx_and_evaluate(pairs, xlsx_path, dict_index, is_pure_text=False)
+
+        red_report_path = cache_root / "reports" / f"{book_name}_red_report.csv"
+        n_red_items = export_red_error_report(pairs, red_report_path)
+        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items)
+
+
+def run_evaluate_pipeline(
+    cfg: Dict[str, Any],
+    book_filter: Optional[str] = None,
+    keep_diff: bool = False,
+) -> None:
+    """
+    Đọc `<Tên sách>.csv` hiện có (thường sau khi thành viên đã sửa lỗi chính tả/OCR),
+    tính lại `text_diff` bằng Levenshtein (trừ khi `keep_diff=True`), cập nhật lại `.csv` & `.xlsx`
+    tô màu chuẩn v2.4, xuất báo cáo chữ đỏ và in kết quả đánh giá độ tương đồng (>= 95%).
+    """
+    out_root = Path(cfg["paths"]["output_dir"])
+    cache_root = Path(cfg["paths"]["cache_dir"])
+    mode_str = "giữ nguyên text_diff trong CSV" if keep_diff else "tính lại text_diff bằng Levenshtein + từ điển"
+    print(f"=== ĐÁNH GIÁ ĐỘ TƯƠNG ĐỒNG & TÔ MÀU XLSX CHUẨN v2.4 (--step evaluate | {mode_str}) ===")
+    dict_index = None if keep_diff else _load_dictionary_from_cfg(cfg)
+
+    for b in cfg.get("books", []):
+        fname = b.get("filename") or b.get("file_name")
+        book_id = b.get("id", "")
+        book_name = Path(fname).stem
+        if book_filter and book_filter not in (book_id, fname, book_name):
+            continue
+
+        book_dir = out_root / book_name
+        csv_path = book_dir / f"{book_name}.csv"
+        if not csv_path.exists():
+            print(f"  [BỎ QUA] [{book_id}] {book_name}: Chưa có file {csv_path.name}. Hãy chạy --step align trước!")
+            continue
+
+        pairs = load_aligned_csv(csv_path)
+        if not keep_diff and dict_index is not None:
+            for p in pairs:
+                if p.text_diff is not None:
+                    p.text_diff = compute_text_diff_levenshtein(p.ch_txt, p.vi_txt, dict_index)
+            export_aligned_csv(pairs, csv_path, is_pure_text=False)
+
+        xlsx_path = book_dir / f"{book_name}.xlsx"
+        report = export_aligned_xlsx_and_evaluate(pairs, xlsx_path, dict_index=None, is_pure_text=False)
+        red_report_path = cache_root / "reports" / f"{book_name}_red_report.csv"
+        n_red_items = export_red_error_report(pairs, red_report_path)
+        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items)

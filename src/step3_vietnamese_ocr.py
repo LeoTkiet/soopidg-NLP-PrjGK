@@ -217,11 +217,22 @@ class VietnameseOCREngine:
         return sort_boxes_quoc_ngu(boxes)
 
 
+def _extract_page_num_from_filename(image_path: Path) -> Optional[int]:
+    """Trích xuất số trang PDF (int) từ tên file ảnh `<Tên sách>.<STT>[_<sub_idx>].jpg`."""
+    try:
+        tail = image_path.stem.rsplit(".", 1)[-1].split("_")[0]
+        return int(tail)
+    except Exception:
+        return None
+
+
 def run_ocr_vi_pipeline(
     cfg: Dict[str, Any],
     book_filter: Optional[str] = None,
     max_pages: Optional[int] = None,
     backend: str = "auto",
+    start_page: Optional[int] = None,
+    end_page: Optional[int] = None,
 ) -> None:
     """
     Điều phối chạy phát hiện dòng & OCR chữ Quốc ngữ cho thư mục `vi/` của các sách,
@@ -231,6 +242,14 @@ def run_ocr_vi_pipeline(
     cache_root = Path(cfg["paths"]["cache_dir"])
     engine = VietnameseOCREngine(backend=backend)
     print(f"=== CHẠY OCR CHỮ QUỐC NGỮ (Backend: {engine.backend}) ===")
+    if start_page is not None or end_page is not None:
+        print(f"- Phạm vi lọc trang: {start_page or 'đầu'} -> {end_page or 'cuối'}")
+    if engine.backend == "layout_only":
+        print(
+            "[CẢNH BÁO] Chưa cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env!\n"
+            "  -> Đang chạy chế độ 'layout_only' (CHỈ vẽ khung dòng, văn bản để trống).\n"
+            "  -> Hãy điền GEMINI_API_KEY vào .env để nhận dạng đầy đủ chữ Quốc ngữ."
+        )
 
     processed_new = 0
     for b in cfg.get("books", []):
@@ -249,6 +268,7 @@ def run_ocr_vi_pipeline(
             continue
 
         annotations: Dict[str, List[Dict[str, Any]]] = {}
+        stop_book = False
         for img_path in vi_images:
             cache_file = book_cache_dir / f"{img_path.stem}.json"
             if cache_file.exists():
@@ -256,20 +276,32 @@ def run_ocr_vi_pipeline(
                 annotations[img_path.name] = rec.get("boxes", [])
                 continue
 
-            if max_pages is not None and processed_new >= max_pages:
+            pnum = _extract_page_num_from_filename(img_path)
+            if pnum is not None:
+                if start_page is not None and pnum < start_page:
+                    continue
+                if end_page is not None and pnum > end_page:
+                    continue
+
+            if stop_book or (max_pages is not None and processed_new >= max_pages):
                 continue
 
-            boxes = engine.recognize_page(img_path)
-            rec = {
-                "image_name": img_path.name,
-                "backend": engine.backend,
-                "boxes": boxes,
-            }
-            cache_file.write_text(
-                json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            annotations[img_path.name] = boxes
-            processed_new += 1
+            try:
+                print(f"  + Đang OCR Quốc ngữ ({engine.backend}): {img_path.name} ...", flush=True)
+                boxes = engine.recognize_page(img_path)
+                rec = {
+                    "image_name": img_path.name,
+                    "backend": engine.backend,
+                    "boxes": boxes,
+                }
+                cache_file.write_text(
+                    json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                annotations[img_path.name] = boxes
+                processed_new += 1
+            except Exception as exc:
+                print(f"  [LỖI OCR-VI] Dừng ở ảnh {img_path.name}: {exc}")
+                stop_book = True
 
         if annotations:
             write_ppocr_files(vi_dir, annotations, is_char_level=False)

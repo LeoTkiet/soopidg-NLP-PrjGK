@@ -21,9 +21,19 @@ DEFAULT_USER_AGENT = (
 
 
 def load_config(config_path: Path = PROJECT_ROOT / "config.yaml") -> Dict[str, Any]:
-    """Đọc file cấu hình YAML và kết hợp thông tin từ biến môi trường."""
+    """Đọc file cấu hình YAML, chuẩn hóa đường dẫn tương đối theo PROJECT_ROOT và nạp biến môi trường."""
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+
+    # Tự động chuyển các đường dẫn tương đối trong config.yaml thành đường dẫn tuyệt đối theo thư mục dự án
+    raw_paths = cfg.get("paths", {})
+    resolved_paths: Dict[str, str] = {}
+    for key, val in raw_paths.items():
+        p = Path(str(val))
+        if not p.is_absolute():
+            p = (PROJECT_ROOT / p).resolve()
+        resolved_paths[key] = str(p)
+    cfg["paths"] = resolved_paths
 
     cfg.setdefault("auth", {})
     cfg["auth"]["base_url"] = os.getenv(
