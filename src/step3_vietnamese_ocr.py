@@ -25,8 +25,8 @@ from src.step4_ppocr_formatter import sort_boxes_quoc_ngu, write_ppocr_files
 def detect_quoc_ngu_line_boxes(
     image_path: Path,
     dark_threshold: int = 125,
-    y_min_ratio: float = 0.12,
-    y_max_ratio: float = 0.81,
+    y_min_ratio: float = 0.115,
+    y_max_ratio: float = 0.84,
     x_min_ratio: float = 0.085,
     x_max_ratio: float = 0.915,
     pad_x: int = 4,
@@ -35,8 +35,9 @@ def detect_quoc_ngu_line_boxes(
     """
     Phát hiện tọa độ 4 đỉnh của từng dòng chữ Quốc ngữ trên trang scan:
     - Ngưỡng mực đậm `dark_threshold=125` tách sạch chữ in mặt trước khỏi bóng chữ xuyên trang mặt sau.
-    - Vùng nội dung chính giới hạn theo tỷ lệ chiều cao `[y_min_ratio, y_max_ratio]` giúp loại bỏ
-      số trang đầu trang (y < 12%) và dòng tên sách chân trang (y > 81%).
+    - Tự động phát hiện đường kẻ ngang chân trang (trên dòng tên sách) để không bao giờ lấy nhầm chân trang.
+    - Tự động tách các khối cao bất thường (> 46px do trang scan nghiêng 1-2 độ khiến 2+ dòng dính nhau theo trục Y)
+      bằng cực tiểu cục bộ của biểu đồ mực ngang.
     """
     im = Image.open(image_path).convert("L")
     w, h = im.size
@@ -54,6 +55,15 @@ def detect_quoc_ngu_line_boxes(
     mask[:, x_max:] = False
 
     row_counts = mask.sum(axis=1)
+
+    # Phát hiện đường kẻ ngang phân cách chân trang (nằm ở khoảng 76%..84% chiều cao, rộng > 45% bề ngang ảnh)
+    for y_rule in range(int(h * 0.74), y_max):
+        if row_counts[y_rule] > int(w * 0.45):
+            y_max = max(y_min + 20, y_rule - 8)
+            mask[y_max:, :] = False
+            row_counts = mask.sum(axis=1)
+            break
+
     raw_spans: List[List[int]] = []
     in_line = False
     start_y = 0
@@ -68,16 +78,41 @@ def detect_quoc_ngu_line_boxes(
     if in_line and (y_max - start_y) >= 8:
         raw_spans.append([start_y, y_max])
 
-    # Gom các dấu thanh rời sát dòng (khoảng hở < 8px) nhưng không gộp hai dòng liền nhau (chiều cao tối đa < 48px)
+    # Gom các dấu thanh rời sát dòng (khoảng hở < 7px) nhưng không gộp hai dòng liền nhau (chiều cao tối đa < 44px)
     merged: List[List[int]] = []
     for sp in raw_spans:
-        if merged and (sp[0] - merged[-1][1] < 8) and (sp[1] - merged[-1][0] < 48):
+        if merged and (sp[0] - merged[-1][1] < 7) and (sp[1] - merged[-1][0] < 44):
             merged[-1][1] = sp[1]
         else:
             merged.append(sp)
 
-    polygons: List[List[List[int]]] = []
+    # Tách các khối cao > 46px (xảy ra khi trang scan bị nghiêng nhẹ khiến nhiều dòng dính nhau theo Y)
+    split_spans: List[List[int]] = []
     for sy, ey in merged:
+        span_h = ey - sy
+        if span_h <= 46:
+            split_spans.append([sy, ey])
+            continue
+        # Ước lượng số dòng (~32px/dòng cho chữ nội dung tiêu chuẩn 800x1135)
+        est_lines = max(2, int(round(span_h / 32.0)))
+        step = span_h / est_lines
+        cuts = [sy]
+        for k in range(1, est_lines):
+            approx_y = int(round(sy + k * step))
+            lo = max(cuts[-1] + 14, approx_y - 10)
+            hi = min(ey - 14, approx_y + 10)
+            if lo < hi:
+                best_y = lo + int(np.argmin(row_counts[lo : hi + 1]))
+                cuts.append(best_y)
+            else:
+                cuts.append(approx_y)
+        cuts.append(ey)
+        for a, b in zip(cuts[:-1], cuts[1:]):
+            if b - a >= 10:
+                split_spans.append([a, b])
+
+    polygons: List[List[List[int]]] = []
+    for sy, ey in split_spans:
         band = mask[sy : ey + 1, :]
         col_idx = np.where(band.sum(axis=0) >= 2)[0]
         if len(col_idx) == 0:

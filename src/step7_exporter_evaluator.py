@@ -446,25 +446,33 @@ def generate_placeholder_map_v26(
     Trả về `(map_path_or_None, total_placeholders)`.
     """
     if image_map and image_map.get("pairs"):
-        ch_order = [fn for pr in image_map["pairs"] for fn in pr.get("ch", [])]
+        ch_order_all = [fn for pr in image_map["pairs"] for fn in pr.get("ch", [])]
+        aligned_ch_set = {
+            fn for pr in image_map["pairs"] if pr.get("ch") and pr.get("vi") for fn in pr.get("ch", [])
+        }
     else:
-        ch_order = sorted(ch_labels.keys(), reverse=True)
+        ch_order_all = sorted(ch_labels.keys(), reverse=True)
+        aligned_ch_set = set(ch_order_all)
 
     # 1. Thu thập mọi vị trí 〓 trong ch/Label.txt theo đúng thứ tự đọc
-    label_locs: List[Dict[str, Any]] = []
-    for fn in ch_order:
+    label_locs: List[Tuple[Dict[str, Any], bool]] = []
+    for fn in ch_order_all:
         boxes = ch_labels.get(fn, [])
+        is_aligned_img = fn in aligned_ch_set
         for b_idx, box in enumerate(boxes):
             txt = unicodedata.normalize("NFC", str(box.get("transcription", "")))
             for pos, ch in enumerate(txt):
                 if ch == "\u3013":
                     label_locs.append(
-                        {
-                            "img_id": fn,
-                            "box_index": b_idx,
-                            "pos": pos,
-                            "char_box_index": None,
-                        }
+                        (
+                            {
+                                "img_id": fn,
+                                "box_index": b_idx,
+                                "pos": pos,
+                                "char_box_index": None,
+                            },
+                            is_aligned_img,
+                        )
                     )
 
     # 2. Thu thập mọi vị trí 〓 trong cột ch_txt của file dóng hàng theo đúng thứ tự đọc
@@ -483,15 +491,20 @@ def generate_placeholder_map_v26(
         return None, 0
 
     raw_pua_queue = (
-        _extract_raw_pua_queue_for_book(book_cache_dir, ch_order)
+        _extract_raw_pua_queue_for_book(book_cache_dir, ch_order_all)
         if book_cache_dir is not None
         else []
     )
 
     placeholders: List[Dict[str, Any]] = []
-    for i in range(total):
-        lbl_obj = label_locs[i] if i < len(label_locs) else None
-        aln_obj = align_locs[i] if i < len(align_locs) else None
+    aln_cursor = 0
+    for i in range(len(label_locs)):
+        lbl_obj, is_aligned_img = label_locs[i]
+        if is_aligned_img and aln_cursor < len(align_locs):
+            aln_obj = align_locs[aln_cursor]
+            aln_cursor += 1
+        else:
+            aln_obj = None
         orig_ch = raw_pua_queue[i] if i < len(raw_pua_queue) else None
         meta = PUA_PLACEHOLDER_METADATA.get(orig_ch or "", {})
         ids_val = meta.get("ids")
@@ -508,6 +521,17 @@ def generate_placeholder_map_v26(
                 "note": note_val,
             }
         )
+    while aln_cursor < len(align_locs):
+        placeholders.append(
+            {
+                "label": None,
+                "align": align_locs[aln_cursor],
+                "unicode": None,
+                "ids": None,
+                "note": "Chữ Nôm chưa có trong Unicode chuẩn",
+            }
+        )
+        aln_cursor += 1
 
     map_path.write_text(
         json.dumps({"placeholders": placeholders}, ensure_ascii=False, indent=2),

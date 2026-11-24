@@ -325,19 +325,60 @@ def generate_book_image_map(
                 }
             )
     elif len(ch_pages_desc) == len(vi_pages) + 1 and book_cfg.get("id") == "book_1":
-        # book_1: trang vi 13 (bìa + đầu mục lục) tương ứng 2 trang ch [446, 445],
-        # các trang còn lại (14..17 và 19..225) đối ứng 1-1 với 444..441 và 440..234 (vi + ch = 459).
-        pairs.append(
-            {
-                "ch": [
-                    build_image_filename(book_name, ch_pages_desc[0], total_pages),
-                    build_image_filename(book_name, ch_pages_desc[1], total_pages),
-                ],
-                "vi": [build_image_filename(book_name, vi_pages[0], total_pages)],
-                "note": "Trang bìa và đầu mục lục Nôm (446, 445) tương ứng trang Quốc ngữ đầu tiên (013)",
-            }
+        # book_1: Kiểm chứng trực tiếp theo số trang tham chiếu in ở góc phải trên bản Quốc ngữ:
+        # - 446 <-> 013 (Bìa: Thánh Mẫu Phương Danh)
+        # - 445 <-> 014 (Trang ấn ký in '( 445 )')
+        # - 444 <-> [015, 016] (Cả 2 trang mục lục Quốc ngữ đều in '( 444 )')
+        # - 443 <-> 017 (Trang mục lục Quốc ngữ in '( 443 )')
+        # - 442, 441: Bản scan PDF bị thiếu 2 trang Quốc ngữ in số 16 & 17 (trang PDF 018 bị trắng) -> missing/ch
+        # - 440..234 <-> 019..225: đối ứng 1-1 chính xác (vi + ch = 459).
+        pairs.extend(
+            [
+                {
+                    "ch": [build_image_filename(book_name, 446, total_pages)],
+                    "vi": [build_image_filename(book_name, 13, total_pages)],
+                },
+                {
+                    "ch": [build_image_filename(book_name, 445, total_pages)],
+                    "vi": [build_image_filename(book_name, 14, total_pages)],
+                },
+                {
+                    "ch": [build_image_filename(book_name, 444, total_pages)],
+                    "vi": [
+                        build_image_filename(book_name, 15, total_pages),
+                        build_image_filename(book_name, 16, total_pages),
+                    ],
+                },
+                {
+                    "ch": [build_image_filename(book_name, 443, total_pages)],
+                    "vi": [build_image_filename(book_name, 17, total_pages)],
+                },
+                {
+                    "ch": [build_image_filename(book_name, 442, total_pages)],
+                    "vi": [],
+                    "note": "Bản scan PDF bị thiếu trang Quốc ngữ in số 16 (ứng với trang Nôm 442)",
+                },
+                {
+                    "ch": [build_image_filename(book_name, 441, total_pages)],
+                    "vi": [],
+                    "note": "Bản scan PDF bị thiếu trang Quốc ngữ in số 17 (ứng với trang Nôm 441)",
+                },
+            ]
         )
-        for ch_p, vi_p in zip(ch_pages_desc[2:], vi_pages[1:]):
+        # Lưu bản sao trang thiếu Quốc ngữ vào missing/ch/ theo Quy định v2.6 (Trang 8)
+        missing_ch_dir = output_root / book_name / "missing" / "ch"
+        missing_ch_dir.mkdir(parents=True, exist_ok=True)
+        for mp in (442, 441):
+            m_fname = build_image_filename(book_name, mp, total_pages)
+            src_m = output_root / book_name / "ch" / m_fname
+            dst_m = missing_ch_dir / m_fname
+            if src_m.exists() and not dst_m.exists():
+                shutil.copy2(src_m, dst_m)
+
+        # Các trang nội dung chính 440..234 <-> 019..225 (207 cặp 1-1)
+        vi_body = [p for p in vi_pages if p >= 19]
+        ch_body = [p for p in ch_pages_desc if p <= 440]
+        for ch_p, vi_p in zip(ch_body, vi_body):
             pairs.append(
                 {
                     "ch": [build_image_filename(book_name, ch_p, total_pages)],

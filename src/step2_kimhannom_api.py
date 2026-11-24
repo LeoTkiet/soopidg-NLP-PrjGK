@@ -15,6 +15,7 @@ Giới hạn số lượt gọi (Rate Limits):
 
 import base64
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -333,8 +334,19 @@ def _is_margin_header_or_pagenum(
     if max_y < img_height * 0.085 or min_y > img_height * 0.92:
         return True
 
-    # Tiêu đề sách / số tờ khắc in ở ngoài lề trái (x_max <= 17% chiều rộng trang, tức <= 136px trên ảnh 800px)
+    # Tiêu đề sách / số tờ khắc in ở ngoài lề trái (x_max <= 17% chiều rộng trang)
     if max_x <= img_width * 0.17 and len(text) <= 10:
+        return True
+
+    # Gáy sách in tiêu đề tên sách ('圣母芳名' / '聖母芳名') hoặc số tờ chữ Hán ở vùng lề trái mở rộng (<= 23%)
+    if max_x <= img_width * 0.23 and len(text) <= 6:
+        if "圣母芳名" in text or "聖母芳名" in text:
+            return True
+        if min_y >= img_height * 0.60 and re.fullmatch(r"[一二三四五六七八九十百零廿卅\d]+", text):
+            return True
+
+    # Họa tiết hoa thị khung bìa bị OCR nhầm thành '米'/'来' đơn lẻ ở 4 góc/viền
+    if text in ("米", "来") and (max_x <= img_width * 0.28 or min_x >= img_width * 0.72 or max_y <= img_height * 0.28 or min_y >= img_height * 0.75):
         return True
 
     # Hoặc ở sát mép phải ngoài khung

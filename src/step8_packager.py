@@ -469,11 +469,16 @@ def validate_book_v24(
                         errors.append(f"XLSX dòng {idx} {side}[{pos_i}]: màu #{rgb6}, kỳ vọng vàng.")
                         break
 
-    # Đối chiếu văn bản nối từ Label.txt (theo thứ tự đọc trong image_map) khớp với CSV (v2.4 Trang 14)
+    # Đối chiếu văn bản nối từ Label.txt (theo thứ tự đọc trong image_map) khớp với CSV (v2.4/v2.6 Trang 14)
+    # Lưu ý: các trang Nôm thuộc missing/ch (có `vi: []` trong image_map) không có hàng dóng tương ứng trong CSV.
     if ch_labels and vi_labels:
         if image_map and image_map.get("pairs"):
-            ch_order = [fn for pr in image_map["pairs"] for fn in pr.get("ch", [])]
-            vi_order = [fn for pr in image_map["pairs"] for fn in pr.get("vi", [])]
+            ch_order = [
+                fn for pr in image_map["pairs"] if pr.get("ch") and pr.get("vi") for fn in pr.get("ch", [])
+            ]
+            vi_order = [
+                fn for pr in image_map["pairs"] if pr.get("ch") and pr.get("vi") for fn in pr.get("vi", [])
+            ]
         else:
             ch_order = sorted(ch_labels.keys(), reverse=True)
             vi_order = sorted(vi_labels.keys())
