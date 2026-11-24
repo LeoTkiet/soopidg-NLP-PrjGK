@@ -46,6 +46,7 @@ class KimHanNomAPIClient:
         usage_log_path: Optional[Path] = None,
         email: str = "",
         password: str = "",
+        enforce_local_quota: bool = True,
     ) -> None:
         if user_agent.lower().startswith("python-requests"):
             raise ValueError(
@@ -59,6 +60,7 @@ class KimHanNomAPIClient:
         self.usage_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.email = email
         self.password = password
+        self.enforce_local_quota = enforce_local_quota
         self._last_request_ts = 0.0
 
     def _is_token_valid(self) -> bool:
@@ -160,12 +162,13 @@ class KimHanNomAPIClient:
         last_day = [t for t in history if now - t <= 86400]
         last_week = [t for t in history if now - t <= 7 * 86400]
 
-        if len(last_hour) >= 50:
-            raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 50 lượt/giờ!")
-        if len(last_day) >= 200:
-            raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 200 lượt/ngày!")
-        if len(last_week) >= 600:
-            raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 600 lượt/tuần!")
+        if self.enforce_local_quota:
+            if len(last_hour) >= 50:
+                raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 50 lượt/giờ!")
+            if len(last_day) >= 200:
+                raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 200 lượt/ngày!")
+            if len(last_week) >= 600:
+                raise RateLimitExceededError("Chạm giới hạn API Kim Hán Nôm: 600 lượt/tuần!")
 
         last_week.append(now)
         self.usage_log_path.write_text(json.dumps(last_week), encoding="utf-8")
@@ -558,6 +561,7 @@ def run_ocr_nom_pipeline(
     max_pages: Optional[int] = None,
     start_page: Optional[int] = None,
     end_page: Optional[int] = None,
+    ignore_local_quota: bool = False,
 ) -> None:
     """
     Điều phối chạy OCR chữ Hán Nôm qua API Kim Hán Nôm cho các sách trong config.yaml.
@@ -592,10 +596,16 @@ def run_ocr_nom_pipeline(
         usage_log_path=cache_root / "api_usage_log.json",
         email=email,
         password=password,
+        enforce_local_quota=not ignore_local_quota,
     )
 
     quota = client.get_quota_status()
     print("=== CHẠY OCR HÁN NÔM QUA API KIM HÁN NÔM ===")
+    if ignore_local_quota:
+        print(
+            "- [Chế độ] Đã tắt giới hạn chặn cục bộ (--ignore-local-quota); "
+            "vẫn giữ delay 3s/request và dừng ngay nếu máy chủ trả lỗi."
+        )
     if start_page is not None or end_page is not None:
         print(f"- Phạm vi lọc trang: {start_page or 'đầu'} -> {end_page or 'cuối'}")
     print(

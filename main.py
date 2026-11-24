@@ -123,6 +123,17 @@ def main() -> None:
         action="store_true",
         help="Giữ nguyên cột text_diff đang có trong .csv khi chạy --step evaluate (chỉ tô lại .xlsx & chấm điểm)",
     )
+    parser.add_argument(
+        "--ignore-local-quota",
+        action="store_true",
+        help="Tắt bộ chặn quota cục bộ (50/giờ, 200/ngày, 600/tuần) trong --step ocr-nom (vẫn giữ delay 3s/request và dừng nếu server báo lỗi)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Số trang gom chung trong 1 request Gemini khi chạy --step ocr-vi (mặc định 5, giúp tiết kiệm 5x quota)",
+    )
     args = parser.parse_args()
     cfg = load_config()
 
@@ -141,6 +152,7 @@ def main() -> None:
             max_pages=args.max_pages,
             start_page=args.start_page,
             end_page=args.end_page,
+            ignore_local_quota=args.ignore_local_quota,
         )
     elif args.step == "ocr-vi":
         run_ocr_vi_pipeline(
@@ -149,6 +161,7 @@ def main() -> None:
             max_pages=args.max_pages,
             start_page=args.start_page,
             end_page=args.end_page,
+            batch_size=args.batch_size,
         )
     elif args.step == "align":
         run_align_pipeline(cfg, book_filter=args.book)

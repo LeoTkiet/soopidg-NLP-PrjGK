@@ -15,17 +15,83 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.step5_dictionary_loader import HanNomDictionaryIndex
 
 # Bảng ánh xạ các ký tự Private Use Area (PUA) do OCR Kim Hán Nôm trả về
-# sang ký tự Unicode Hán Nôm chuẩn có trong bộ từ điển
+# sang ký tự Unicode Hán Nôm chuẩn (Nhóm A: đã có điểm mã Unicode hợp lệ trong Ext-B/Ext-H & từ điển)
 PUA_NORMALIZATION_MAP = {
+    # 6 mã từ tập mẫu ban đầu
     "\U000f000b": "冊",  # sách
     "\U000f070f": "婆",  # bà
     "\U000f070b": "𠬠",  # một
     "\U000f03d9": "䀡",  # xem
     "\U000f0152": "𠉞",  # nay
     "\U000f0482": "義",  # nghĩa
+    # 19 mã khớp 100% hình nét (glyph outline) với Unicode CJK Extension H (U+31350..U+323AF)
+    "\U000f047c": "𱺵",  # U+31EB5: là (x728 trong book_1)
+    "\U000f000e": "𱍸",  # U+31378: ấy (x112)
+    "\U000f07ef": "𱻌",  # U+31ECC: dường (x48)
+    "\U000f0833": "𱏫",  # U+313EB: đâu (x23)
+    "\U000f006e": "𱑏",  # U+3144F: cử (x19)
+    "\U000f0602": "𲈾",  # U+3223E: cửa (x13)
+    "\U000f0087": "𱒢",  # U+314A2: ví (x12)
+    "\U000f02c7": "𱥯",  # U+3196F: mấy (x8)
+    "\U000f0629": "𲋄",  # U+322C4: phong (x7)
+    "\U000f07e8": "𱐬",  # U+3142C: thế (x7)
+    "\U000f15ae": "𱽐",  # U+31F50: bông / buông (x5)
+    "\U000f025f": "𱼫",  # U+31F2B: đài (x4)
+    "\U000f0821": "𱽇",  # U+31F47: gian (x3)
+    "\U000f0029": "𱎹",  # U+313B9: nghi (x1)
+    "\U000f004f": "𱐍",  # U+3140D: u (x1)
+    "\U000f01f5": "𱠍",  # U+3180D: buông (x1)
+    "\U000f1072": "𲃪",  # U+320EA: đuổi (x1)
+    "\U000f12d9": "𱔫",  # U+3152B: ghẹo (x1)
+    "\U000f030e": "𱪵",  # U+31AB5: lô (x1)
+    # 4 mã dị thể nét khắc của chữ Unicode chuẩn đã có trong từ điển & dv.jsonl
+    "\U000f061a": "𩈘",  # U+29218: mặt (x38, dv.jsonl ghi chung forms với 𩈘)
+    "\U000f084e": "𠁑",  # U+20051: dưới (x8)
+    "\U000f0742": "𱟴",  # U+317F4: đem / dặm (x2)
+    "\U000f0832": "𱏫",  # U+313EB: đâu (x1, biến thể chân 匕/儿 của U+F0833)
 }
 
-# Ký tự chọn dạng (Variation Selectors) bắt buộc phải xóa theo Quy định v2.4 (Trang 13)
+# Nhóm B (Quy định đồ án v2.6 Trang 12-14 & 17): Các ký tự PUA thực sự chưa có điểm mã Unicode chuẩn
+# -> Bắt buộc thay bằng 〓 (U+3013) và ghi vết vào `<Tên sách>_placeholder_map.json`
+PUA_PLACEHOLDER_METADATA: Dict[str, Dict[str, Optional[str]]] = {
+    "\U000f07ba": {
+        "ids": "⿰氵⿱日土",
+        "note": "PUA gốc U+F07BA (âm đọc ngữ cảnh: nát/nết; biến thể 涅)",
+    },
+    "\U000f0761": {
+        "ids": "⿱宀冘",
+        "note": "PUA gốc U+F0761 (âm đọc ngữ cảnh: đem/đâm; BTCN #191, chưa có Unicode chuẩn)",
+    },
+    "\U000f0803": {
+        "ids": "⿱穴刀",
+        "note": "PUA gốc U+F0803 (âm đọc ngữ cảnh: cùng; biến thể 穷 viết 穴+刀)",
+    },
+    "\U000f0341": {
+        "ids": "⿰牜高",
+        "note": "PUA gốc U+F0341 (âm đọc ngữ cảnh: rỗi/rồi; biến thể 犒 trong dv.jsonl)",
+    },
+    "\U000f04f3": {
+        "ids": "⿱艹⿰罒戍",
+        "note": "PUA gốc U+F04F3 (âm đọc ngữ cảnh: mót/miệt; biến thể 蔑 trong dv.jsonl)",
+    },
+    "\U000f0816": {
+        "ids": "⿰忄𣀦",
+        "note": "PUA gốc U+F0816 (âm đọc ngữ cảnh: run; biến thể 憞/惇)",
+    },
+    "\U000f0c65": {
+        "ids": "⿰糹⿱厽彡",
+        "note": "PUA gốc U+F0C65 (âm đọc ngữ cảnh: tóm; biến thể 縿)",
+    },
+    "\U000f0810": {
+        "ids": "⿰忄⿱宀冘",
+        "note": "PUA gốc U+F0810 (âm đọc ngữ cảnh: thầm; bộ 忄 + U+F0761)",
+    },
+}
+
+# Biểu thức phát hiện mọi ký tự thuộc vùng dùng riêng (Private Use Area) theo v2.6 Trang 14 & 17
+PUA_CHAR_PATTERN = re.compile(r"[\uE000-\uF8FF\U000F0000-\U000FFFFD\U00100000-\U0010FFFD]")
+
+# Ký tự chọn dạng (Variation Selectors) bắt buộc phải xóa theo Quy định v2.4/v2.6 (Trang 17)
 VARIATION_SELECTOR_PATTERN = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
 
 # Dấu câu và khoảng trắng cần bỏ qua khi trích xuất từng chữ Nôm / âm tiết Quốc ngữ
@@ -58,10 +124,18 @@ class AlignedSentencePair:
         return self.vi_txt
 
 
-def normalize_pua_chars(text: str) -> str:
-    """Chuyển các ký tự PUA (Private Use Area) sang ký tự Hán Nôm Unicode chuẩn."""
+def normalize_pua_chars(text: str, replace_unknown_with_placeholder: bool = True) -> str:
+    """
+    Chuyển các ký tự PUA (Private Use Area) sang ký tự Hán Nôm Unicode chuẩn (Nhóm A).
+    Theo Quy định đồ án v2.6 (Trang 12-14 & 17):
+    Mọi ký tự PUA còn lại chưa có điểm mã Unicode chuẩn (Nhóm B) bắt buộc thay bằng 〓 (U+3013)
+    và theo dõi trong `<Tên sách>_placeholder_map.json`.
+    """
     for pua_char, std_char in PUA_NORMALIZATION_MAP.items():
-        text = text.replace(pua_char, std_char)
+        if pua_char in text:
+            text = text.replace(pua_char, std_char)
+    if replace_unknown_with_placeholder and PUA_CHAR_PATTERN.search(text):
+        text = PUA_CHAR_PATTERN.sub("\u3013", text)
     return text
 
 
@@ -331,74 +405,282 @@ class SinoNomAligner:
             text_diff=diff,
         )
 
+    def _align_tokens_dp(
+        self,
+        sn_tokens: List[Tuple[str, int, int]],
+        qn_tokens: List[Tuple[str, int, int]],
+    ) -> List[Tuple[Optional[int], Optional[int]]]:
+        """
+        Dóng hàng chỉ số token Nôm <-> âm tiết Quốc ngữ bằng quy hoạch động Levenshtein
+        có trọng số từ điển (dùng banded DP khi trang dài để chạy rất nhanh và không bị trôi lệch).
+        Trả về danh sách các cặp `(sn_idx_or_None, qn_idx_or_None)` theo thứ tự tăng dần.
+        """
+        m = len(sn_tokens)
+        n = len(qn_tokens)
+        if m == 0 and n == 0:
+            return []
+        if m == 0:
+            return [(None, j) for j in range(n)]
+        if n == 0:
+            return [(i, None) for i in range(m)]
+
+        band = max(45, abs(m - n) + 30)
+        use_band = (m * n > 60000) and (band < min(m, n))
+        ins_del = 1.2
+        inf = 1e9
+
+        if not use_band:
+            dp = [[0.0] * (n + 1) for _ in range(m + 1)]
+            op = [[0] * (n + 1) for _ in range(m + 1)]
+            for i in range(1, m + 1):
+                dp[i][0] = i * ins_del
+                op[i][0] = 1
+            for j in range(1, n + 1):
+                dp[0][j] = j * ins_del
+                op[0][j] = 2
+            for i in range(1, m + 1):
+                sn_ch = sn_tokens[i - 1][0]
+                for j in range(1, n + 1):
+                    qn_syl = qn_tokens[j - 1][0]
+                    matched = (
+                        self.dictionary_index is not None
+                        and sn_ch != "\u3013"
+                        and self.dictionary_index.is_match(sn_ch, qn_syl)
+                    )
+                    c_sub = dp[i - 1][j - 1] + (0.0 if matched else 1.0)
+                    c_del = dp[i - 1][j] + ins_del
+                    c_ins = dp[i][j - 1] + ins_del
+                    if c_sub <= c_del and c_sub <= c_ins:
+                        dp[i][j] = c_sub
+                        op[i][j] = 0
+                    elif c_del <= c_ins:
+                        dp[i][j] = c_del
+                        op[i][j] = 1
+                    else:
+                        dp[i][j] = c_ins
+                        op[i][j] = 2
+            res: List[Tuple[Optional[int], Optional[int]]] = []
+            i, j = m, n
+            while i > 0 or j > 0:
+                a = op[i][j]
+                if a == 0:
+                    res.append((i - 1, j - 1))
+                    i -= 1
+                    j -= 1
+                elif a == 1:
+                    res.append((i - 1, None))
+                    i -= 1
+                else:
+                    res.append((None, j - 1))
+                    j -= 1
+            res.reverse()
+            return res
+
+        # Banded DP quanh đường chéo (m / n) cho đoạn văn dài
+        dp_d: Dict[Tuple[int, int], float] = {(0, 0): 0.0}
+        op_d: Dict[Tuple[int, int], int] = {}
+        for i in range(1, min(m, band) + 1):
+            dp_d[(i, 0)] = i * ins_del
+            op_d[(i, 0)] = 1
+        for j in range(1, min(n, band) + 1):
+            dp_d[(0, j)] = j * ins_del
+            op_d[(0, j)] = 2
+        ratio = n / max(1, m)
+        for i in range(1, m + 1):
+            sn_ch = sn_tokens[i - 1][0]
+            center = int(round(i * ratio))
+            j_lo = max(1, center - band)
+            j_hi = min(n, center + band)
+            for j in range(j_lo, j_hi + 1):
+                qn_syl = qn_tokens[j - 1][0]
+                matched = (
+                    self.dictionary_index is not None
+                    and sn_ch != "\u3013"
+                    and self.dictionary_index.is_match(sn_ch, qn_syl)
+                )
+                c_sub = dp_d.get((i - 1, j - 1), inf) + (0.0 if matched else 1.0)
+                c_del = dp_d.get((i - 1, j), inf) + ins_del
+                c_ins = dp_d.get((i, j - 1), inf) + ins_del
+                if c_sub <= c_del and c_sub <= c_ins:
+                    dp_d[(i, j)] = c_sub
+                    op_d[(i, j)] = 0
+                elif c_del <= c_ins:
+                    dp_d[(i, j)] = c_del
+                    op_d[(i, j)] = 1
+                else:
+                    dp_d[(i, j)] = c_ins
+                    op_d[(i, j)] = 2
+        res = []
+        i, j = m, n
+        while i > 0 or j > 0:
+            a = op_d.get((i, j), 0)
+            if a == 0:
+                res.append((i - 1, j - 1))
+                i -= 1
+                j -= 1
+            elif a == 1:
+                res.append((i - 1, None))
+                i -= 1
+            else:
+                res.append((None, j - 1))
+                j -= 1
+        res.reverse()
+        return res
+
+    def _split_chunk_into_sentence_pairs(
+        self,
+        ch_chars: List[Tuple[str, str]],
+        vi_text: str,
+        sent_counter_per_img: Dict[str, int],
+    ) -> List[AlignedSentencePair]:
+        """
+        Tách một khối đã khóa cặp trang (1 trang hoặc vài trang có câu vắt trang) thành từng câu
+        bằng cách cắt văn bản Nôm bám chính xác theo đường dóng hàng Levenshtein + từ điển,
+        bảo toàn 100% ký tự của cả `ch_chars` lẫn `vi_text`.
+        """
+        ch_full = "".join(c for c, _ in ch_chars)
+        vi_full = clean_quoc_ngu_text(vi_text)
+        if not ch_full or not vi_full:
+            return []
+
+        vi_sentences = [s.strip() for s in self.SENTENCE_END_VI.split(vi_full) if s.strip()]
+        if len(vi_sentences) <= 1:
+            origin_img = ch_chars[0][1]
+            sent_num = sent_counter_per_img.get(origin_img, 0) + 1
+            sent_counter_per_img[origin_img] = sent_num
+            return [self.build_pair(origin_img, sent_num, ch_full, vi_full, is_phonetic=True)]
+
+        sn_tokens = tokenize_sinonom_with_spans(ch_full)
+        qn_tokens = tokenize_quoc_ngu_with_spans(vi_full)
+        if not sn_tokens or not qn_tokens:
+            origin_img = ch_chars[0][1]
+            sent_num = sent_counter_per_img.get(origin_img, 0) + 1
+            sent_counter_per_img[origin_img] = sent_num
+            return [self.build_pair(origin_img, sent_num, ch_full, vi_full, is_phonetic=True)]
+
+        # Dóng hàng toàn bộ khối bằng Levenshtein có trọng số từ điển
+        aligned = self._align_tokens_dp(sn_tokens, qn_tokens)
+
+        # Với mỗi âm tiết Quốc ngữ j, tìm chỉ số ký tự cuối cùng của chữ Nôm khớp gần nhất <= j
+        qn_to_ch_end: List[int] = [0] * len(qn_tokens)
+        last_ch_end = 0
+        for si, qi in aligned:
+            if si is not None:
+                last_ch_end = sn_tokens[si][2]
+            if qi is not None:
+                qn_to_ch_end[qi] = last_ch_end
+
+        # Cắt ranh giới từng câu Quốc ngữ khớp theo `qn_to_ch_end`
+        pairs: List[AlignedSentencePair] = []
+        ch_cursor = 0
+        qn_cursor = 0
+        total_ch_len = len(ch_full)
+
+        pending_vi: List[str] = []
+        for s_idx, vi_sent in enumerate(vi_sentences):
+            n_syl = len(tokenize_quoc_ngu_with_spans(vi_sent))
+            next_qn_cursor = min(len(qn_tokens), qn_cursor + n_syl)
+            is_last = s_idx == len(vi_sentences) - 1
+
+            if is_last:
+                target_end = total_ch_len
+            else:
+                target_end = qn_to_ch_end[next_qn_cursor - 1] if next_qn_cursor > 0 else ch_cursor
+                # Kéo theo dấu câu Nôm ngay sau chữ cuối câu (。！？、；)
+                while (
+                    target_end < total_ch_len
+                    and PUNCTUATION_CHAR_PATTERN.match(ch_full[target_end])
+                ):
+                    target_end += 1
+
+            # Tránh tạo hàng rỗng một vế (v2.4/v2.6 Trang 19): nếu ch_sent rỗng, gộp sang câu kế
+            ch_slice = ch_full[ch_cursor:target_end]
+            if not is_last and not ch_slice.strip():
+                pending_vi.append(vi_sent)
+                qn_cursor = next_qn_cursor
+                continue
+
+            if pending_vi:
+                vi_sent = " ".join(pending_vi + [vi_sent])
+                pending_vi = []
+
+            if is_last and not ch_slice.strip() and pairs:
+                # Nếu câu cuối bị hết chữ Nôm, gộp vào câu trước đó để không có hàng rỗng vế
+                prev = pairs.pop()
+                merged_vi = f"{prev.vi_txt} {vi_sent}".strip()
+                pairs.append(
+                    AlignedSentencePair(
+                        img_id=prev.img_id,
+                        sentence_id=prev.sentence_id,
+                        ch_txt=prev.ch_txt,
+                        vi_txt=merged_vi,
+                        text_diff=compute_text_diff_levenshtein(
+                            prev.ch_txt, merged_vi, self.dictionary_index
+                        )
+                        if self.dictionary_index is not None
+                        else [],
+                    )
+                )
+                break
+
+            origin_img = ch_chars[min(ch_cursor, len(ch_chars) - 1)][1]
+            ch_cursor = target_end
+            qn_cursor = next_qn_cursor
+
+            sent_num = sent_counter_per_img.get(origin_img, 0) + 1
+            sent_counter_per_img[origin_img] = sent_num
+            pairs.append(self.build_pair(origin_img, sent_num, ch_slice, vi_sent, is_phonetic=True))
+
+        return pairs
+
     def align_page_sequence(
         self,
         page_entries: List[Tuple[str, List[str], List[str]]],
     ) -> List[AlignedSentencePair]:
         """
-        Dóng hàng một chuỗi cặp trang liên tiếp theo thứ tự đọc của sách:
-        - `page_entries`: danh sách `(ch_img_id, ch_col_texts, vi_line_texts)`.
-        - Tự động nối câu bị ngắt do chuyển trang (lấy `img_id` của trang bắt đầu câu theo v2.4 Trang 14).
-        - Tách câu Quốc ngữ theo dấu kết thúc câu `.!?` rồi cắt tương ứng số chữ Nôm 1-1
-          kết hợp tinh chỉnh ranh giới bằng Levenshtein & từ điển Hán Nôm.
+        Dóng hàng một chuỗi cặp trang liên tiếp theo thứ tự đọc của sách (`image_map.json`):
+        - Khóa neo từng cặp trang bằng Levenshtein có trọng số từ điển để **chống trôi lệch (drift)**
+          qua nhiều trang (kể cả khi trang bìa/mục lục đầu sách có độ dài chênh lệch).
+        - Tự động gom các cặp trang liên tiếp khi cuối trang Quốc ngữ chưa kết thúc câu (ghép câu vắt trang
+          và lấy `img_id` của trang bắt đầu câu theo v2.4/v2.6 Trang 14), giới hạn khối tối đa 4 trang
+          để luôn tái khóa neo đều đặn.
         """
-        # 1. Nối toàn bộ văn bản Nôm và Quốc ngữ kèm đánh dấu biên trang bắt đầu
-        full_ch_chars: List[Tuple[str, str]] = []  # (char, origin_img_id)
-        full_vi_chunks: List[str] = []
-
-        for img_id, ch_lines, vi_lines in page_entries:
-            page_ch = clean_sinonom_text("".join(ch_lines))
-            for ch in page_ch:
-                full_ch_chars.append((ch, img_id))
-            page_vi = merge_hyphenated_vi_lines(vi_lines)
-            if page_vi:
-                full_vi_chunks.append(page_vi)
-
-        full_vi_text = " ".join(full_vi_chunks).strip()
-        if not full_ch_chars or not full_vi_text:
-            return []
-
-        # 2. Tách câu Quốc ngữ theo dấu kết thúc câu
-        vi_sentences = [s.strip() for s in self.SENTENCE_END_VI.split(full_vi_text) if s.strip()]
-        if not vi_sentences:
-            vi_sentences = [full_vi_text]
-
-        # 3. Cắt tương ứng phần văn bản Nôm theo số âm tiết Quốc ngữ (dịch âm 1-1)
         pairs: List[AlignedSentencePair] = []
         sent_counter_per_img: Dict[str, int] = {}
-        ch_cursor = 0
-        total_ch_len = len(full_ch_chars)
 
-        for s_idx, vi_sent in enumerate(vi_sentences):
-            vi_syl_count = len(tokenize_quoc_ngu_with_spans(vi_sent))
-            if ch_cursor >= total_ch_len:
-                break
+        buf_ch: List[Tuple[str, str]] = []
+        buf_vi: List[str] = []
+        buf_pages = 0
 
-            start_cursor = ch_cursor
-            origin_img = full_ch_chars[start_cursor][1]
+        for idx, (img_id, ch_lines, vi_lines) in enumerate(page_entries):
+            page_ch = clean_sinonom_text("".join(ch_lines))
+            page_vi = merge_hyphenated_vi_lines(vi_lines)
+            if not page_ch and not page_vi:
+                continue
 
-            if s_idx == len(vi_sentences) - 1:
-                end_cursor = total_ch_len
-            else:
-                counted = 0
-                end_cursor = start_cursor
-                while end_cursor < total_ch_len and counted < vi_syl_count:
-                    ch = full_ch_chars[end_cursor][0]
-                    if not PUNCTUATION_CHAR_PATTERN.match(ch):
-                        counted += 1
-                    end_cursor += 1
-                # Kéo theo dấu câu Nôm ngay sau chữ cuối câu (ví dụ 。！？)
-                while (
-                    end_cursor < total_ch_len
-                    and PUNCTUATION_CHAR_PATTERN.match(full_ch_chars[end_cursor][0])
-                ):
-                    end_cursor += 1
+            for ch in page_ch:
+                buf_ch.append((ch, img_id))
+            if page_vi:
+                buf_vi.append(page_vi)
+            buf_pages += 1
 
-            ch_sent = "".join(c for c, _ in full_ch_chars[start_cursor:end_cursor])
-            ch_cursor = end_cursor
+            is_last_page = idx == len(page_entries) - 1
+            # Kiểm tra trang Quốc ngữ hiện tại có kết thúc câu hay vắt sang trang sau
+            ends_sentence = bool(re.search(r"[.!?\"”'»]\s*$", page_vi))
+            # Trang có độ chênh lệch số chữ lớn (như trang bìa/mục lục) nên chốt riêng để không ảnh hưởng trang nội dung sau
+            ch_cnt_p = len(tokenize_sinonom_with_spans(page_ch))
+            vi_cnt_p = len(tokenize_quoc_ngu_with_spans(page_vi))
+            is_divergent_page = abs(ch_cnt_p - vi_cnt_p) > max(20, int(0.25 * max(1, ch_cnt_p, vi_cnt_p)))
 
-            sent_num = sent_counter_per_img.get(origin_img, 0) + 1
-            sent_counter_per_img[origin_img] = sent_num
-            pairs.append(self.build_pair(origin_img, sent_num, ch_sent, vi_sent, is_phonetic=True))
+            if is_last_page or ends_sentence or is_divergent_page or buf_pages >= 4:
+                if buf_ch and buf_vi:
+                    pairs.extend(
+                        self._split_chunk_into_sentence_pairs(
+                            buf_ch, " ".join(buf_vi), sent_counter_per_img
+                        )
+                    )
+                    buf_ch = []
+                    buf_vi = []
+                    buf_pages = 0
 
         return pairs

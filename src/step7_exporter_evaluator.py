@@ -29,6 +29,9 @@ from openpyxl.styles import Alignment, Font
 from src.step5_dictionary_loader import HanNomDictionaryIndex
 from src.step6_text_cleaner_aligner import (
     AlignedSentencePair,
+    PUA_CHAR_PATTERN,
+    PUA_NORMALIZATION_MAP,
+    PUA_PLACEHOLDER_METADATA,
     SinoNomAligner,
     compute_text_diff_levenshtein,
     tokenize_quoc_ngu_with_spans,
@@ -370,15 +373,168 @@ def _load_dictionary_from_cfg(cfg: Dict[str, Any]) -> HanNomDictionaryIndex:
     return dict_index
 
 
-def _print_eval_summary(book_id: str, book_name: str, report: Dict[str, Any], red_report_path: Path, n_red_items: int) -> None:
+def _extract_raw_pua_queue_for_book(
+    book_cache_dir: Path,
+    ch_order: List[str],
+) -> List[str]:
+    """
+    Quét cache JSON gốc của Kim Hán Nôm (chứa `result_bbox` trước khi đổi PUA -> 〓)
+    để truy xuất mã PUA gốc tương ứng với từng ký tự 〓 theo đúng thứ tự đọc.
+    """
+    from src.step2_kimhannom_api import convert_api_result_to_ppocr_boxes
+
+    # Tạm thu thập danh sách mã PUA nhóm B từ cache gốc nếu có
+    raw_pua_list: List[str] = []
+    if not book_cache_dir.exists():
+        return raw_pua_list
+
+    for fn in ch_order:
+        cf = book_cache_dir / f"{Path(fn).stem}.json"
+        if not cf.exists():
+            continue
+        try:
+            data = json.loads(cf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        # Lấy lại danh sách box theo đúng thứ tự cột dọc (không thay thế PUA)
+        raw_texts_in_order: List[str] = []
+        raw_bboxes = data.get("result_bbox") or []
+        if raw_bboxes:
+            # Sắp xếp cùng thứ tự bằng hàm convert nhưng đọc text thô
+            from src.step2_kimhannom_api import _is_margin_header_or_pagenum, _normalize_single_polygon
+            from src.step4_ppocr_formatter import sort_boxes_sinonom_vertical
+
+            w = int(data.get("width", 800))
+            h = int(data.get("height", 1135))
+            tmp_boxes = []
+            for idx, b in enumerate(raw_bboxes):
+                pts = _normalize_single_polygon(b)
+                if pts is None:
+                    continue
+                txt = ""
+                if isinstance(b, (list, tuple)) and len(b) == 2 and isinstance(b[1], (list, tuple)) and len(b[1]) >= 1:
+                    txt = str(b[1][0]).strip()
+                elif isinstance(b, dict):
+                    txt = str(b.get("transcription") or b.get("text") or "").strip()
+                if not txt or _is_margin_header_or_pagenum(pts, txt, w, h):
+                    continue
+                tmp_boxes.append({"transcription": txt, "points": pts})
+            for sb in sort_boxes_sinonom_vertical(tmp_boxes):
+                raw_texts_in_order.append(sb["transcription"])
+        for t in raw_texts_in_order:
+            for ch in t:
+                if ch == "\u3013":
+                    raw_pua_list.append("\u3013")
+                elif ch in PUA_NORMALIZATION_MAP:
+                    continue
+                elif PUA_CHAR_PATTERN.match(ch):
+                    raw_pua_list.append(ch)
+    return raw_pua_list
+
+
+def generate_placeholder_map_v26(
+    book_dir: Path,
+    book_name: str,
+    pairs: List[AlignedSentencePair],
+    ch_labels: Dict[str, List[Dict[str, Any]]],
+    image_map: Optional[Dict[str, Any]] = None,
+    book_cache_dir: Optional[Path] = None,
+) -> Tuple[Optional[Path], int]:
+    """
+    Sinh file `<Tên sách>_placeholder_map.json` chuẩn Quy định đồ án v2.6 (Trang 12 - 14)
+    ghi nhận vị trí chính xác của MỌI ký tự 〓 (U+3013) trong `ch/Label.txt` và file `.csv`/`.xlsx`.
+    Trả về `(map_path_or_None, total_placeholders)`.
+    """
+    if image_map and image_map.get("pairs"):
+        ch_order = [fn for pr in image_map["pairs"] for fn in pr.get("ch", [])]
+    else:
+        ch_order = sorted(ch_labels.keys(), reverse=True)
+
+    # 1. Thu thập mọi vị trí 〓 trong ch/Label.txt theo đúng thứ tự đọc
+    label_locs: List[Dict[str, Any]] = []
+    for fn in ch_order:
+        boxes = ch_labels.get(fn, [])
+        for b_idx, box in enumerate(boxes):
+            txt = unicodedata.normalize("NFC", str(box.get("transcription", "")))
+            for pos, ch in enumerate(txt):
+                if ch == "\u3013":
+                    label_locs.append(
+                        {
+                            "img_id": fn,
+                            "box_index": b_idx,
+                            "pos": pos,
+                            "char_box_index": None,
+                        }
+                    )
+
+    # 2. Thu thập mọi vị trí 〓 trong cột ch_txt của file dóng hàng theo đúng thứ tự đọc
+    align_locs: List[Dict[str, Any]] = []
+    for p in pairs:
+        txt = unicodedata.normalize("NFC", p.ch_txt)
+        for pos, ch in enumerate(txt):
+            if ch == "\u3013":
+                align_locs.append({"sentence_id": p.sentence_id, "pos": pos})
+
+    total = max(len(label_locs), len(align_locs))
+    map_path = book_dir / f"{book_name}_placeholder_map.json"
+    if total == 0:
+        if map_path.exists():
+            map_path.unlink()
+        return None, 0
+
+    raw_pua_queue = (
+        _extract_raw_pua_queue_for_book(book_cache_dir, ch_order)
+        if book_cache_dir is not None
+        else []
+    )
+
+    placeholders: List[Dict[str, Any]] = []
+    for i in range(total):
+        lbl_obj = label_locs[i] if i < len(label_locs) else None
+        aln_obj = align_locs[i] if i < len(align_locs) else None
+        orig_ch = raw_pua_queue[i] if i < len(raw_pua_queue) else None
+        meta = PUA_PLACEHOLDER_METADATA.get(orig_ch or "", {})
+        ids_val = meta.get("ids")
+        if orig_ch and orig_ch != "\u3013":
+            note_val = meta.get("note") or f"PUA gốc U+{ord(orig_ch):05X} (chưa có điểm mã Unicode chuẩn)"
+        else:
+            note_val = meta.get("note") or "Chữ Nôm chưa có trong Unicode chuẩn"
+        placeholders.append(
+            {
+                "label": lbl_obj,
+                "align": aln_obj,
+                "unicode": None,
+                "ids": ids_val,
+                "note": note_val,
+            }
+        )
+
+    map_path.write_text(
+        json.dumps({"placeholders": placeholders}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return map_path, len(placeholders)
+
+
+def _print_eval_summary(
+    book_id: str,
+    book_name: str,
+    report: Dict[str, Any],
+    red_report_path: Path,
+    n_red_items: int,
+    placeholder_info: Optional[Tuple[Optional[Path], int]] = None,
+) -> None:
     status = "ĐẠT (>= 95%)" if report["passed_95_threshold"] else "CHƯA ĐẠT (< 95%)"
+    ph_line = ""
+    if placeholder_info and placeholder_info[1] > 0:
+        ph_line = f"\n      Ký tự 〓 (v2.6): {placeholder_info[1]} vị trí -> {placeholder_info[0]}"
     print(
         f"  + [{book_id}] {book_name}:\n"
         f"      Câu dóng hàng : {report['total_rows']} câu (hàng null: {report['null_rows']} - {report['null_ratio_percent']}%)\n"
         f"      Chữ tính điểm : {report['scored_nom_chars']} | Đen: {report['black_chars']} | "
         f"Đỏ: {report['red_chars']} | Vàng: {report['warn_chars']} ({report['warn_ratio_percent']}%)\n"
         f"      Độ tương đồng : {report['similarity_percent']}% -> {status}\n"
-        f"      Báo cáo chữ đỏ: {red_report_path} ({n_red_items} mục cần rà soát)"
+        f"      Báo cáo chữ đỏ: {red_report_path} ({n_red_items} mục cần rà soát){ph_line}"
     )
 
 
@@ -471,7 +627,15 @@ def run_align_pipeline(
 
         red_report_path = cache_root / "reports" / f"{book_name}_red_report.csv"
         n_red_items = export_red_error_report(pairs, red_report_path)
-        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items)
+        ph_info = generate_placeholder_map_v26(
+            book_dir=book_dir,
+            book_name=book_name,
+            pairs=pairs,
+            ch_labels=ch_labels,
+            image_map=image_map,
+            book_cache_dir=cache_root / "ocr_nom" / book_name,
+        )
+        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items, ph_info)
 
 
 def run_evaluate_pipeline(
@@ -514,4 +678,15 @@ def run_evaluate_pipeline(
         report = export_aligned_xlsx_and_evaluate(pairs, xlsx_path, dict_index=None, is_pure_text=False)
         red_report_path = cache_root / "reports" / f"{book_name}_red_report.csv"
         n_red_items = export_red_error_report(pairs, red_report_path)
-        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items)
+        ch_labels = load_ppocr_label_file(book_dir / "ch" / "Label.txt")
+        map_path = book_dir / f"{book_name}_image_map.json"
+        image_map = json.loads(map_path.read_text(encoding="utf-8")) if map_path.exists() else None
+        ph_info = generate_placeholder_map_v26(
+            book_dir=book_dir,
+            book_name=book_name,
+            pairs=pairs,
+            ch_labels=ch_labels,
+            image_map=image_map,
+            book_cache_dir=cache_root / "ocr_nom" / book_name,
+        )
+        _print_eval_summary(book_id, book_name, report, red_report_path, n_red_items, ph_info)

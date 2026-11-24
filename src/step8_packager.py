@@ -34,6 +34,7 @@ from openpyxl.cell.rich_text import CellRichText
 
 from src.step6_text_cleaner_aligner import (
     AlignedSentencePair,
+    PUA_CHAR_PATTERN,
     VARIATION_SELECTOR_PATTERN,
 )
 from src.step7_exporter_evaluator import evaluate_pairs_v24
@@ -214,6 +215,116 @@ def _validate_spans(
         )
 
 
+def _validate_placeholder_map_v26(
+    book_dir: Path,
+    book_name: str,
+    ch_labels: Dict[str, List[Dict[str, Any]]],
+    pairs: List[AlignedSentencePair],
+    errors: List[str],
+) -> None:
+    """
+    Kiểm tra 7 ràng buộc bắt buộc của `<Tên sách>_placeholder_map.json` theo Quy định đồ án v2.6 (Trang 14).
+    """
+    map_path = book_dir / f"{book_name}_placeholder_map.json"
+    if not map_path.exists():
+        return
+    try:
+        data = json.loads(map_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{map_path.name}: JSON không hợp lệ ({exc}).")
+        return
+
+    placeholders = data.get("placeholders")
+    if not isinstance(placeholders, list):
+        errors.append(f"{map_path.name}: thiếu mảng 'placeholders'.")
+        return
+
+    pair_by_id = {p.sentence_id: p for p in pairs}
+    seen_lbl: set = set()
+    seen_aln: set = set()
+    n_lbl_entries = 0
+    n_aln_entries = 0
+
+    for idx, item in enumerate(placeholders, start=1):
+        lbl = item.get("label")
+        aln = item.get("align")
+        if lbl is None and aln is None:
+            errors.append(f"{map_path.name} mục #{idx}: cả label và align đều null.")
+            continue
+
+        if lbl is not None:
+            n_lbl_entries += 1
+            fn = lbl.get("img_id", "")
+            bi = int(lbl.get("box_index", -1))
+            pos = int(lbl.get("pos", -1))
+            key = (fn, bi, pos)
+            if key in seen_lbl:
+                errors.append(f"{map_path.name} mục #{idx}: trùng vị trí label {key}.")
+            seen_lbl.add(key)
+            boxes = ch_labels.get(fn, [])
+            if bi < 0 or bi >= len(boxes):
+                errors.append(f"{map_path.name} mục #{idx}: box_index={bi} vượt biên ảnh {fn}.")
+            else:
+                txt = unicodedata.normalize("NFC", str(boxes[bi].get("transcription", "")))
+                if pos < 0 or pos >= len(txt) or txt[pos] != "\u3013":
+                    errors.append(f"{map_path.name} mục #{idx}: ch/Label.txt {key} không phải ký tự 〓.")
+
+        if aln is not None:
+            n_aln_entries += 1
+            sid = aln.get("sentence_id", "")
+            pos = int(aln.get("pos", -1))
+            key = (sid, pos)
+            if key in seen_aln:
+                errors.append(f"{map_path.name} mục #{idx}: trùng vị trí align {key}.")
+            seen_aln.add(key)
+            p = pair_by_id.get(sid)
+            if p is None:
+                errors.append(f"{map_path.name} mục #{idx}: không tìm thấy sentence_id '{sid}'.")
+            else:
+                txt = unicodedata.normalize("NFC", p.ch_txt)
+                if pos < 0 or pos >= len(txt) or txt[pos] != "\u3013":
+                    errors.append(f"{map_path.name} mục #{idx}: ch_txt {key} không phải ký tự 〓.")
+                elif p.text_diff is not None:
+                    covered = any(
+                        it.get("type") == "error"
+                        and any(int(s) <= pos < int(e) for s, e in it.get("nom_pos", []))
+                        for it in p.text_diff
+                    )
+                    if not covered:
+                        errors.append(f"{map_path.name} mục #{idx}: vị trí 〓 {key} chưa có phần tử 'error' phủ trong text_diff.")
+
+        uni = item.get("unicode")
+        if uni is not None:
+            m = re.fullmatch(r"U\+([0-9A-F]{4,6})", str(uni))
+            if not m:
+                errors.append(f"{map_path.name} mục #{idx}: unicode='{uni}' sai định dạng U+XXXX.")
+            else:
+                cp = int(m.group(1), 16)
+                if cp == 0x3013 or PUA_CHAR_PATTERN.match(chr(cp)) or VARIATION_SELECTOR_PATTERN.match(chr(cp)):
+                    errors.append(f"{map_path.name} mục #{idx}: unicode='{uni}' không hợp lệ (U+3013 / PUA / VS).")
+
+        ids_val = item.get("ids")
+        if ids_val is not None:
+            if "\u3013" in ids_val or PUA_CHAR_PATTERN.search(ids_val):
+                errors.append(f"{map_path.name} mục #{idx}: trường ids không được chứa 〓 hoặc PUA.")
+
+    # Kiểm tra đủ số lượng 〓
+    total_lbl_ph = sum(
+        unicodedata.normalize("NFC", str(b.get("transcription", ""))).count("\u3013")
+        for boxes in ch_labels.values()
+        for b in boxes
+    )
+    total_aln_ph = sum(unicodedata.normalize("NFC", p.ch_txt).count("\u3013") for p in pairs)
+    if n_lbl_entries != total_lbl_ph:
+        errors.append(
+            f"{map_path.name}: số mục label ({n_lbl_entries}) != tổng số 〓 trong ch/Label.txt ({total_lbl_ph})."
+        )
+    if n_aln_entries != total_aln_ph:
+        errors.append(
+            f"{map_path.name}: số mục align ({n_aln_entries}) != tổng số 〓 trong CSV ch_txt ({total_aln_ph})."
+        )
+
+
 def validate_book_v24(
     book_dir: Path,
     book_name: str,
@@ -262,6 +373,8 @@ def validate_book_v24(
                 errors.append(f"{row_ref}: hàng không được rỗng một vế (ch_txt hoặc vi_txt trống).")
             if VARIATION_SELECTOR_PATTERN.search(ch_txt):
                 errors.append(f"{row_ref}: phát hiện ký tự chọn dạng (Variation Selector) trong ch_txt.")
+            if PUA_CHAR_PATTERN.search(ch_txt):
+                errors.append(f"{row_ref}: phát hiện ký tự vùng dùng riêng (PUA) trong ch_txt (vi phạm v2.6 Trang 14 & 17).")
             if ch_txt != unicodedata.normalize("NFC", ch_txt) or vi_txt != unicodedata.normalize("NFC", vi_txt):
                 errors.append(f"{row_ref}: văn bản chưa chuẩn hóa NFC.")
             if "\n" in ch_txt or "\n" in vi_txt:
@@ -378,6 +491,8 @@ def validate_book_v24(
         csv_vi_concat = "".join(p.vi_txt for p in pairs)
         if re.sub(r"[\s\-]+", "", lbl_vi_concat) != re.sub(r"[\s\-]+", "", csv_vi_concat):
             errors.append("Văn bản nối từ vi/Label.txt không khớp với cột vi_txt trong CSV (v2.4 Trang 14).")
+
+    _validate_placeholder_map_v26(book_dir, book_name, ch_labels, pairs, errors)
 
     evaluation = evaluate_pairs_v24(pairs)
     if not evaluation["passed_95_threshold"]:
